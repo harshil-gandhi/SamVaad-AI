@@ -3,6 +3,7 @@ import { ApiError } from "../../utils/apiError.js";
 import { User } from "../models/user.model.js";
 import { ApiResponse } from "../../utils/apiResponse.js";
 import jwt from "jsonwebtoken";
+import { Chat } from "../models/chat.model.js";
 
 
 const generateAccessRefreshToken = async (userId) => {
@@ -75,9 +76,11 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "username or email and password are required")
     }
 
-    const user = await User.findOne({
-        $or: [{ username: normalizedUsername }, { email: normalizedEmail }]
-    })
+    const loginFilter = normalizedUsername
+        ? { username: normalizedUsername }
+        : { email: normalizedEmail }
+
+    const user = await User.findOne(loginFilter)
     if (!user) {
         throw new ApiError(400, "User does not exist")
     }
@@ -108,7 +111,7 @@ const loginUser = asyncHandler(async (req, res) => {
             new ApiResponse(
                 200,
                 {
-                    user: loggedInUser, accessToken, refreshToken
+                    user: loggedInUser
                 },
                 "User Logged In Successfully"
             )
@@ -204,11 +207,40 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     )
 })
 
+//api to get published images by pipeline and by user can be implemented here in future
+
+const getPublishedImages = asyncHandler(async (req, res) => {
+
+    const publishedImageMessages = await Chat.aggregate([
+        {$unwind: "$messages"},
+
+        {$match: {
+            "messages.isImage": true,
+            "messages.isPublished": true,
+        }
+       },
+       {
+        $project: {
+            _id: 0,
+            imageUrl: "$messages.content",
+            username: "$username",
+
+        }   
+       }
+    ])
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200, publishedImageMessages, "Published images fetched successfully")
+    )   
+})
+
 export {
     registerUser,
     loginUser,
     logoutUser,
     refreshAccessToken,
-    getCurrentUser
+    getCurrentUser,
+    getPublishedImages
 }
 

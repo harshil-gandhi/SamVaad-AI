@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
     getCurrentUser,
+    getPublishedImages,
     loginUser,
     logoutUser,
     refreshAccessToken,
@@ -17,5 +18,6 @@ router.post("/refresh-token", refreshAccessToken);
 
 router.get("/me", verifyJWT, getCurrentUser);
 router.post("/logout", verifyJWT, logoutUser);
+router.get("/published-images", verifyJWT, getPublishedImages);
 
 export default router;
