@@ -3,7 +3,15 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { Transaction } from "../models/transaction.model.js";
 import { User } from "../models/user.model.js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const getStripeClient = () => {
+    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!stripeSecretKey) {
+        throw new Error("STRIPE_SECRET_KEY is missing on server")
+    }
+
+    return new Stripe(stripeSecretKey)
+}
 
 const markTransactionPaidAndCreditUser = async (session) => {
     const transactionId = session?.metadata?.transactionId;
@@ -27,10 +35,16 @@ const markTransactionPaidAndCreditUser = async (session) => {
 };
 
 const stripeWebhook = asyncHandler(async (req, res) => {
+    const stripe = getStripeClient();
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     const signature = req.headers["stripe-signature"];
 
     if (!signature) {
         return res.status(400).json({ message: "Missing stripe-signature header" });
+    }
+
+    if (!webhookSecret) {
+        return res.status(500).json({ message: "STRIPE_WEBHOOK_SECRET is missing on server" });
     }
 
     let event;
@@ -42,7 +56,7 @@ const stripeWebhook = asyncHandler(async (req, res) => {
         event = stripe.webhooks.constructEvent(
             payload,
             signature,
-            process.env.STRIPE_WEBHOOK_SECRET
+            webhookSecret
         );
     } catch (error) {
         return res.status(400).send(`Webhook Error: ${error.message}`);

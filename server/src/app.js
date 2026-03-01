@@ -1,12 +1,14 @@
 import express from "express"
 import cors from "cors"
 import cookieParser from "cookie-parser"
+import { connectDB } from "./db/index.js"
 import userRouter from "./routes/user.routes.js"
 import chatRouter from "./routes/chat.routes.js"
 import messageRouter from "./routes/message.routes.js"
 import creditRouter from "./routes/credit.routes.js"
 import webhookRouter from "./routes/webhook.routes.js"
 const app=express()
+let dbConnectionPromise = null
 
 const corsOrigin = process.env.CORS_ORIGIN
 const isWildcardCors = !corsOrigin || corsOrigin === "*"
@@ -15,6 +17,19 @@ app.use(cors({
     origin: isWildcardCors ? true : corsOrigin,
     credentials:true
 }))
+
+app.use(async (req, res, next) => {
+    try {
+        if (!dbConnectionPromise) {
+            dbConnectionPromise = connectDB()
+        }
+        await dbConnectionPromise
+        next()
+    } catch (error) {
+        dbConnectionPromise = null
+        next(error)
+    }
+})
 
 //stripe webhooks
 
@@ -43,3 +58,4 @@ app.use((err, req, res, next) => {
 })
 
 export {app}
+export default app

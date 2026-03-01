@@ -39,9 +39,18 @@ const getAllPlans = asyncHandler(async (req, res) => {
 
 //api controller for purchasing a plan
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const getStripeClient = () => {
+    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!stripeSecretKey) {
+        throw new ApiError(500, "STRIPE_SECRET_KEY is missing on server")
+    }
+
+    return new Stripe(stripeSecretKey)
+}
 
 const purchasePlan = asyncHandler(async (req, res) => {
+    const stripe = getStripeClient();
     const rawPlanId = req.body?.planId
         ?? req.body?.planID
         ?? req.body?._id
