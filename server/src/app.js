@@ -9,6 +9,8 @@ import creditRouter from "./routes/credit.routes.js"
 import webhookRouter from "./routes/webhook.routes.js"
 import healthRouter from "./routes/health.routes.js"
 const app=express()
+
+//Because in serverless environments like vercel, your function can run multiple times.You don’t want to reconnect to DB on every request.So you reuse the same connection.this is a common pattern to optimize DB connections in serverless environments. By keeping the connection promise outside of the request handler, you ensure that all requests share the same connection once it's established, rather than creating a new connection for each request.
 let dbConnectionPromise = null
 
 const corsOrigin = process.env.CORS_ORIGIN
@@ -21,6 +23,8 @@ app.use(cors({
 
 app.use("/api/v1/health", healthRouter)
 
+
+// Middleware to ensure DB connection is established before handling any request (except health check)
 app.use(async (req, res, next) => {
     if (req.path === "/api/v1/health") {
         return next()
@@ -52,6 +56,7 @@ app.use("/api/v1/chats", chatRouter)
 app.use("/api/v1/messages", messageRouter) // Messages are handled within chat routes
 app.use("/api/v1/credits", creditRouter) // Credit routes for subscription plans and purchases
 
+// Default route for API
 app.get("/", (req, res) => {
     return res.status(200).json({
         success: true,
@@ -60,10 +65,13 @@ app.get("/", (req, res) => {
     })
 })
 
+
+// Handle favicon requests to prevent unnecessary 404 errors in logs
 app.get("/favicon.ico", (req, res) => {
     return res.status(204).end()
 })
 
+// 404 handler for undefined routes
 app.use((req, res) => {
     return res.status(404).json({
         success: false,
@@ -71,6 +79,7 @@ app.use((req, res) => {
     })
 })
 
+// Global error handling middleware
 app.use((err, req, res, next) => {
     const statusCode = err?.statusCode || 500
     const message = err?.message || "Internal Server Error"

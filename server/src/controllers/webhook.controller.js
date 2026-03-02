@@ -49,10 +49,11 @@ const stripeWebhook = asyncHandler(async (req, res) => {
 
     let event;
     try {
+        //stripe library needs raw body to verify the signature, but express by default parses the body and convert it to json, so we need to convert it back to buffer before passing it to stripe library
         const payload = Buffer.isBuffer(req.body)
             ? req.body
             : Buffer.from(JSON.stringify(req.body || {}));
-
+        //verification of signature will throw error if signature is invalid or if the payload is tampered, so we can be sure that the event is coming from stripe and the payload is not tampered
         event = stripe.webhooks.constructEvent(
             payload,
             signature,
@@ -80,7 +81,9 @@ const stripeWebhook = asyncHandler(async (req, res) => {
             break;
     }
 
-    return res.status(200).json({ received: true });
+    return res
+        .status(200)
+        .json({ received: true });
 });
 
 export { stripeWebhook };

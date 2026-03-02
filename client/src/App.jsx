@@ -1,6 +1,6 @@
 import React from "react";
 import Sidebar from "./components/Sidebar";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import Community from "./pages/Community";
 import Credit from "./pages/Credit";
@@ -10,18 +10,23 @@ import { useState } from "react";
 import ChatBox from "./components/ChatBox";
 import "./assets/prism.css";
 import { useAppContext } from "./context/AppContext";
+import{Toaster} from "react-hot-toast"
+
 
 const App = () => {
-  const {user} =useAppContext();
+  const {user,loadingUser} =useAppContext();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { pathname } = useLocation();
-  if (pathname === "/loading") {
+  if (pathname === "/loading" || loadingUser) {
     return <Loading />;
   }
+
+
   return (
     <>
-      {!isMenuOpen && (
+      <Toaster position="top-center" toastOptions={{duration: 2000}}/>
+      {user && !isMenuOpen && (
         <img
           src={assets.menu_icon}
           alt="menu"
@@ -34,14 +39,20 @@ const App = () => {
           <Sidebar isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
           <Routes>
             <Route path="/" element={<ChatBox />} />
-            <Route path="/login" element={<Login />} />
             <Route path="/community" element={<Community />} />
             <Route path="/credit" element={<Credit />} />
+            <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="/signup" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
       </div>):(
         <div className="h-screen w-screen flex items-center justify-center bg-gradient-to-b from-[#242124] to-[#000000] ">
-          <Login /> 
+          <Routes>
+            <Route path="/login" element={<Login initialMode="login" />} />
+            <Route path="/signup" element={<Login initialMode="register" />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
         </div>
       )}
   

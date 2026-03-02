@@ -35,9 +35,9 @@ const ChatBox = () => {
     <div className="flex flex-1 flex-col justify-between h-screen">
       {/* {chat messages} */}
       <div ref={containerRef}
-        className={`flex flex-col flex-1 gap-0.5 px-8 py-4 ]  overflow-y-auto ${
+        className={`flex flex-col flex-1 gap-0.5 px-8 py-4 overflow-y-auto ${
           messages.length === 0
-            ? "items-center justify-center text-center gap-6 "
+            ? "items-center justify-center text-center gap-3 "
             : "items-start justify-start"
         }`}
       >

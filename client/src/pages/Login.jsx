@@ -1,16 +1,51 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { useAppContext } from '../context/AppContext';
+import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 
-const Login = () => {
-  const [state, setState] = useState("login");
-        const [username, setUsername] = useState("");
+const Login = ({ initialMode = "login" }) => {
+    const [state, setState] = useState(initialMode);
+    const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
-    const [password, setPassword] =useState("");
+    const [password, setPassword] = useState("");
+    const { axios, setToken } = useAppContext();
 
-    const handleSubmit = (e) => {
+    useEffect(() => {
+        setState(initialMode);
+    }, [initialMode]);
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log(username, email, password);
+        const url= state === "login" ? "/api/v1/users/login" : "/api/v1/users/register";
+        try {
+            const { data } = await axios.post(url, { username, email, password });
+            if (data.success) {
+                const accessToken = data?.token || data?.data?.accessToken;
+
+                if (accessToken) {
+                    setToken(accessToken);
+                    localStorage.setItem("token", accessToken);
+                    return;
+                }
+
+                if (state === "register") {
+                    toast.success(data.message || "Account created successfully. Please login.");
+                    setState("login");
+                    setPassword("");
+                    return;
+                }
+
+                toast.error("Login succeeded but access token was not returned.");
+            }
+                else {  
+                    toast.error(data.message || "Authentication failed");
+                }
+        } catch (error) {
+            console.error("Login error:", error);
+            toast.error(error?.response?.data?.message || "Authentication request failed");
+        }
     };
-  return (
+    return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 m-auto items-start p-8 py-12 w-80 sm:w-[352px] text-gray-500 rounded-lg shadow-xl border border-gray-200 bg-white ">
             <p className="text-2xl font-medium m-auto">
                 <span className="text-purple-700">User</span> {state === "login" ? "Login" : "Sign Up"}
@@ -31,11 +66,11 @@ const Login = () => {
             </div>
             {state === "register" ? (
                 <p>
-                    Already have account? <span onClick={() => setState("login")} className="text-purple-700 cursor-pointer">click here</span>
+                    Already have account? <Link to="/login" className="text-purple-700 cursor-pointer">click here</Link>
                 </p>
             ) : (
                 <p>
-                    Create an account? <span onClick={() => setState("register")} className="text-purple-700 cursor-pointer">click here</span>
+                    Create an account? <Link to="/signup" className="text-purple-700 cursor-pointer">click here</Link>
                 </p>
             )}
             <button type='submit' className="bg-purple-700 hover:bg-purple-800 transition-all text-white w-full py-2 rounded-md cursor-pointer">
@@ -43,5 +78,5 @@ const Login = () => {
             </button>
         </form>
     );
-}; 
+};
 export default Login

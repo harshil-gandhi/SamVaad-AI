@@ -12,13 +12,13 @@ const normalizeMessagePayload = (req) => {
     const body = req.body || {}
 
     const chatId = String(
-        body.chatId ?? body.chatID ?? body.chatid ?? req.params?.chatId ?? req.query?.chatId ?? ""
+        body.chatId ?? req.params?.chatId ?? req.query?.chatId ?? ""
     ).trim()
 
     const promptSource = body.prompt ?? body.message ?? body.text ?? ""
     const prompt = String(promptSource).trim()
 
-    const isPublishedRaw = body.ispublished ?? body.isPublished ?? body.isPubished ?? body.ispubished
+    const isPublishedRaw = body.isPublished
     const isPublished = String(isPublishedRaw).toLowerCase() === "true"
 
     return { chatId, prompt, isPublished, receivedKeys: Object.keys(body) }
@@ -142,12 +142,8 @@ const imageMessageController = asyncHandler(async (req, res) => {
     // Get authenticated user for ownership + credit checks
     const userId = req.user._id
 
-    if (!userId) {
-        throw new ApiError(400, "User not found")
-    }
-
     // Image generation costs 2 credits
-    if (req.user.credits <= 2) {
+    if (req.user.credits < 2) {
         return res
             .status(403)
             .json(new ApiResponse(403, null, "Not enough credits"))

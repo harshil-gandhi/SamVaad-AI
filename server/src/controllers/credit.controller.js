@@ -1,13 +1,13 @@
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/apiError.js";
 import { ApiResponse } from "../../utils/apiResponse.js";
-import {Transaction} from "../models/transaction.model.js";
+import { Transaction } from "../models/transaction.model.js";
 import Stripe from "stripe";
 
 
-const plans=[
+const plans = [
 
-       {
+    {
         _id: "basic",
         name: "Basic",
         price: 10,
@@ -77,7 +77,7 @@ const purchasePlan = asyncHandler(async (req, res) => {
     if (!originUrl) {
         throw new ApiError(400, "Origin URL is missing. Send Origin header or configure CLIENT_URL")
     }
-
+    // In real application, you should create the transaction after successful payment gateway response, but for simplicity we are creating it before redirecting to stripe checkout page, and then updating it after receiving webhook from stripe about successful payment
     const transaction = await Transaction.create({
         userId,
         planId: normalizedPlanId,
@@ -106,7 +106,7 @@ const purchasePlan = asyncHandler(async (req, res) => {
         metadata: {
             transactionId: transaction._id.toString(),
             appId: "samvaad-ai"
-        },   
+        },
         expires_at: Math.floor(Date.now() / 1000) + (30 * 60) // Session expires in 30 minutes
 
     })

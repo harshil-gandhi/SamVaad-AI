@@ -5,9 +5,23 @@ import { useState } from "react";
 import moment from "moment";
 
 const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
-  const { chats, theme, setTheme, user, setUser, navigate, setSelectedChat } =
+  const { chats, theme, setTheme, user, navigate, setSelectedChat, createNewChat, fetchUsersChats, logout, deleteChat } =
     useAppContext();
   const [search, setSearch] = useState("");
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+
+  const handleCreateChat = async () => {
+    try {
+      setIsCreatingChat(true);
+      await createNewChat();
+      await fetchUsersChats();
+      navigate("/");
+      setIsMenuOpen(false);
+    } finally {
+      setIsCreatingChat(false);
+    }
+  };
+
   return (
     <div
       className={`flex flex-col h-screen min-w-72 p-4 dark:bg-gradient-to-b dark:from-[#242124]/30 dark:to-[#000000]/30 border-r border-[#80609F]/30 backdrop-blur-3xl transition-all duration-500 max-md:absolute left-0 z-1 ${!isMenuOpen && "max-md:-translate-x-full"}`}
@@ -21,8 +35,12 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
       />
 
       {/* {button} */}
-      <button className="bg-gradient-to-r from-[#A456F7] to-[#3D81F6] hover:from-[#80609F]/50 hover:to-[#80609F]/70  py-2 mt-5 text-white rounded-full w-full h-10 flex items-center justify-center transition-all duration-300 text-sm  cursor-pointer">
-        <span className=" mr-2 text-xl">+</span> New Chat
+      <button
+        onClick={handleCreateChat}
+        disabled={isCreatingChat}
+        className="bg-gradient-to-r from-[#A456F7] to-[#3D81F6] hover:from-[#80609F]/50 hover:to-[#80609F]/70 py-2 mt-5 text-white rounded-full w-full h-10 flex items-center justify-center transition-all duration-300 text-sm cursor-pointer disabled:opacity-80 disabled:cursor-not-allowed"
+      >
+        <span className=" mr-2 text-xl">+</span> {isCreatingChat ? "Creating..." : "New Chat"}
       </button>
 
       {/* Search */}
@@ -78,10 +96,10 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
                 </p>
               </div>
 
-              <img
+              <img onClick={(e) => deleteChat(e, chat._id)}
                 src={assets.bin_icon}
                 alt="delete"
-                className="hidden w-4 cursor-pointer group-hover:block not-dark:invert"
+                className="hidden  h-5 cursor-pointer group-hover:block not-dark:invert hover:scale-110 transition-all"
               />
             </div>
           ))}
@@ -159,18 +177,15 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
           alt="user account"
           className="w-7 rounded-full"
         />
-        <p className="flex-1 text-sm dark:text-primary truncate">
-          {user ? user?.name : "Login Your Account"}
+        <p className="flex-1 text-sm text-black dark:text-white truncate">
+          {user ? (user?.username || user?.name || user?.email || "User") : "Login Your Account"}
         </p>
         {user && (
           <img
             src={assets.logout_icon}
             alt="logout"
-            className="h-4 cursor-pointer not-dark:invert group-hover:block "
-            onClick={() => {
-              setUser(null);
-              navigate("/login");
-            }}
+            className="h-5 cursor-pointer not-dark:invert group-hover:block pr-2 hover:scale-110 transition-all"
+            onClick={logout}
           />
         )}
 
