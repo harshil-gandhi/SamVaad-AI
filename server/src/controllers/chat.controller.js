@@ -10,6 +10,8 @@ const createChat = asyncHandler(async (req, res) => {
     const userId = req.user._id
     const username = req.user.username
 
+    console.log("[createChat] userId:", userId, "username:", username)
+
     if (!userId) {
         throw new ApiError(400, "User not found")
     }
@@ -26,6 +28,8 @@ const createChat = asyncHandler(async (req, res) => {
     }
 
     const chat = await Chat.create(chatData)
+    console.log("[createChat] Chat created:", chat?._id)
+    
     if (!chat) {
         throw new ApiError(500, "Chat creation failed")
     }
@@ -37,11 +41,13 @@ const createChat = asyncHandler(async (req, res) => {
 //api controller for get all chats of a user
 const getChats = asyncHandler(async (req, res) => {
     const userId = req.user._id
+    console.log("[getChats] Fetching chats for userId:", userId)
+    
     if (!userId) {
         throw new ApiError(400, "User not found")
     }
     const chats = await Chat.find({ userId }).sort({ updatedAt: -1 })
-
+    console.log("[getChats] Found", chats.length, "chats")
 
     return res
         .status(200)

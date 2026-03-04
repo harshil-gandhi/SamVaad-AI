@@ -19,7 +19,10 @@ const asyncHandler = (requestHandler) => {
     return (req, res, next) => {
         Promise
             .resolve(requestHandler(req, res, next))
-            .catch(next);
+            .catch((error) => {
+                console.error("[asyncHandler] Error:", error?.message || error);
+                next(error);
+            });
     };
 };
 
