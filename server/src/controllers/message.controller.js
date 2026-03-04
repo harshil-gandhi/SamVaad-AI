@@ -59,6 +59,108 @@ const buildSafeAssistantReply = (aiMessage) => {
     }
 }
 
+const getProviderErrorMessage = (error) => {
+    return (
+        error?.error?.message ||
+        error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        error?.message ||
+        "AI provider request failed"
+    )
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const getProviderStatusCode = (error) => {
+    const candidate = error?.statusCode || error?.status || error?.response?.status || error?.error?.status || null
+    const parsed = Number(candidate)
+    return Number.isFinite(parsed) ? parsed : null
+}
+
+const isRateLimitError = (error) => {
+    const status = getProviderStatusCode(error)
+    const rawMessage = getProviderErrorMessage(error)
+    const message = String(rawMessage || "").toLowerCase()
+
+    return (
+        status === 429 ||
+        message.includes("too many requests") ||
+        message.includes("resource exhausted") ||
+        message.includes("quota") ||
+        message.includes("rate") ||
+        message.includes("throttle")
+    )
+}
+
+const createTextCompletion = async (openai, prompt) => {
+    const model = "gemini-2.5-flash"
+    const maxAttempts = 2
+    let lastError = null
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const result = await openai.chat.completions.create({
+                model,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt.trim(),
+                    },
+                ],
+            })
+
+            return result
+        } catch (error) {
+            lastError = error
+
+            const status = getProviderStatusCode(error)
+            const isRateLimited = isRateLimitError(error)
+            const isTransientProviderError = status >= 500 && status < 600
+
+            if ((isRateLimited || isTransientProviderError) && attempt < maxAttempts) {
+                await sleep(700 * attempt)
+                continue
+            }
+
+            if (isRateLimited) {
+                throw new ApiError(429, "AI is receiving too many requests right now. Please wait a few seconds and try again.")
+            }
+
+            throw new ApiError(502, getProviderErrorMessage(error))
+        }
+    }
+
+    throw new ApiError(502, getProviderErrorMessage(lastError))
+}
+
+const buildImagePrompt = (rawPrompt) => {
+    const prompt = String(rawPrompt || "").trim()
+
+    return [
+        "Create a high-quality image with a single clearly visible person.",
+        "Match the person's identity and attributes exactly as described.",
+        "Keep face details sharp and consistent, natural skin texture, realistic lighting.",
+        "Do not add extra people, text overlays, logos, or watermarks.",
+        "User description:",
+        prompt
+    ].join(" ")
+}
+
+const isLiveHumanImageRequest = (rawPrompt) => {
+    const prompt = String(rawPrompt || "").toLowerCase().trim()
+
+    if (!prompt) return false
+
+    const liveHumanPatterns = [
+        /\b(pm|prime minister|president|chief minister|politician)\b/i,
+        /\b(celebrity|actor|actress|singer|cricketer|influencer|public figure)\b/i,
+        /\b(narendra\s+modi|pm\s+modi|modi)\b/i,
+        /\b(real person|real human|living person|live human)\b/i,
+    ]
+
+    return liveHumanPatterns.some((pattern) => pattern.test(prompt))
+}
+
 const textMessageController = asyncHandler(async (req, res) => {
     const openai = getOpenAIClient()
 
@@ -104,35 +206,50 @@ const textMessageController = asyncHandler(async (req, res) => {
         content: prompt.trim()
     })
 
-    // Send prompt to model and get assistant response
-    const { choices } = await openai.chat.completions.create({
-        model: "gemini-3-flash-preview",
-        messages: [
+    try {
+        // Send prompt to model and get assistant response
+        const { choices } = await createTextCompletion(openai, prompt)
+        const aiMessage = choices?.[0]?.message
 
-            {
-                role: "user",
-                content: prompt.trim(),
-            },
-        ],
-    });
-    const aiMessage = choices?.[0]?.message
+        if (!aiMessage) {
+            throw new ApiError(500, "Failed to get response from AI")
+        }
 
-    if (!aiMessage) {
-        throw new ApiError(500, "Failed to get response from AI")
+        // Normalize assistant response shape for chat storage and avoid leaking provider metadata
+        const reply = buildSafeAssistantReply(aiMessage)
+
+        // Persist assistant message and deduct 1 credit
+        chat.messages.push(reply)
+        await chat.save()
+        await User.updateOne({ _id: userId }, { $inc: { credits: -1 } })
+
+        // Return assistant text reply to client
+        return res
+            .status(200)
+            .json(new ApiResponse(200, reply, "Message sent successfully"))
+    } catch (error) {
+        const statusCode = error?.statusCode || error?.status || error?.response?.status
+        const shouldUseRateLimitFallback = statusCode === 429 || isRateLimitError(error)
+
+        if (shouldUseRateLimitFallback) {
+            const fallbackReply = {
+                role: "assistant",
+                content: "I’m receiving too many requests right now. Please try again in a few moments. Your credit was not deducted.",
+                isImage: false,
+                isPublished: false,
+                timestamp: Date.now()
+            }
+
+            chat.messages.push(fallbackReply)
+            await chat.save()
+
+            return res
+                .status(200)
+                .json(new ApiResponse(200, fallbackReply, "Rate limited fallback response"))
+        }
+
+        throw error
     }
-
-    // Normalize assistant response shape for chat storage and avoid leaking provider metadata
-    const reply = buildSafeAssistantReply(aiMessage)
-
-    // Persist assistant message and deduct 1 credit
-    chat.messages.push(reply)
-    await chat.save()
-    await User.updateOne({ _id: userId }, { $inc: { credits: -1 } })
-
-    // Return assistant text reply to client
-    return res
-        .status(200)
-        .json(new ApiResponse(200, reply, "Message sent successfully"))
 
 })
 
@@ -156,6 +273,19 @@ const imageMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(400, "chatId and prompt are required", [
             `Received keys: ${receivedKeys.length ? receivedKeys.join(", ") : "none"}`
         ])
+    }
+
+    // Safety policy: block image generation of living humans / public figures
+    if (isLiveHumanImageRequest(prompt)) {
+        return res
+            .status(403)
+            .json(
+                new ApiResponse(
+                    403,
+                    null,
+                    "Warning: AI is not allowed to create images of live humans. Please try a fictional or non-identifiable description."
+                )
+            )
     }
 
     // Ensure chat exists and belongs to requester
@@ -182,8 +312,9 @@ const imageMessageController = asyncHandler(async (req, res) => {
         content: prompt.trim()
     })
 
-    // Encode prompt to safely use it in URL path
-    const encodedPrompt = encodeURIComponent(prompt.trim())
+    // Build a structured prompt for better person-specific outputs, then encode for URL
+    const providerPrompt = buildImagePrompt(prompt)
+    const encodedPrompt = encodeURIComponent(providerPrompt)
 
     // Build AI image generation URL (ImageKit transformation route)
     const folderName = encodeURIComponent("Samvaad AI")

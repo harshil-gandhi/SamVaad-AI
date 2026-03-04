@@ -1,15 +1,32 @@
-import React,{useState,useEffect}from 'react'
-import { dummyPublishedImages } from '../assets/assets'
+import React, { useState, useEffect } from 'react'
 import Loading from './Loading'
+import toast from 'react-hot-toast'
+import { useAppContext } from '../context/AppContext'
 
 const Community = () => {
+const { axios, token } = useAppContext()
 
 const [images, setImages] = useState([])
 const [loading, setLoading] = useState(true)
 
 const fetchImage = async () => {
-  setImages(dummyPublishedImages)
-  setLoading(false)
+
+  try {
+   const { data } = await axios.get("/api/v1/users/published-images", {
+    headers: { Authorization: `Bearer ${token}` },
+   });
+    if(data.success){
+      setImages(data?.data || []);
+    }
+    else{
+      toast.error(data.message || "Failed to fetch published images");
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.message || "An error occurred while fetching published images");
+  }
+  finally{
+    setLoading(false)
+  }
 }
 
 useEffect(() => {
@@ -29,7 +46,7 @@ if(loading)
             <a key={index} href={item.imageUrl} target='_blank' className='relative group block rounded-lg overflow-hidden border border-gray-300 dark:border-purple-700 shadow-sm hover:shadow-md transition-shadow duration-300'>
               <img src={item.imageUrl} alt={item.title} className='w-full h-40 md:h-50
               2xl:h-62 object-cover rounded-lg shadow-md group-hover:scale-105 transition-transform duration-300 ease-in-out'/>
-              <p className='absolute bottom-0  right-0 bg-black/50 bg-opacity-50 text-white text-center py-1 text-sm backdrop-blur px-4 rounded-tl-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300'>Created by {item.userName}</p>
+              <p className='absolute bottom-0  right-0 bg-black/50 bg-opacity-50 text-white text-center py-1 text-sm backdrop-blur px-4 rounded-tl-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300'>Created by {item.username || "Unknown"}</p>
             </a>
           ))}
         </div>

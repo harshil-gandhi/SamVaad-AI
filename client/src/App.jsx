@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import Sidebar from "./components/Sidebar";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Community from "./pages/Community";
 import Credit from "./pages/Credit";
@@ -10,15 +10,91 @@ import { useState } from "react";
 import ChatBox from "./components/ChatBox";
 import "./assets/prism.css";
 import { useAppContext } from "./context/AppContext";
-import{Toaster} from "react-hot-toast"
+import { Toaster, toast } from "react-hot-toast"
 
 
 const App = () => {
-  const {user,loadingUser} =useAppContext();
+  const { user, loadingUser, axios, token, fetchUser } = useAppContext();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { pathname } = useLocation();
-  if (pathname === "/loading" || loadingUser) {
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const handledSessionRef = useRef("");
+
+  useEffect(() => {
+    let isCancelled = false;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const handlePaymentReturn = async () => {
+      if (pathname.startsWith("/loading/payment-cancelled")) {
+        toast("Payment cancelled");
+        return;
+      }
+
+      if (!pathname.startsWith("/loading/payment-success")) {
+        return;
+      }
+
+      const sessionId = new URLSearchParams(search).get("session_id");
+      if (!sessionId || handledSessionRef.current === sessionId) {
+        return;
+      }
+
+      if (!token) {
+        toast.error("Session expired. Please login again.");
+        return;
+      }
+
+      handledSessionRef.current = sessionId;
+
+      try {
+        const maxAttempts = 12;
+        let isPaid = false;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          if (isCancelled) return;
+
+          const { data } = await axios.get("/api/v1/credits/verify-session", {
+            params: { session_id: sessionId },
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (data?.success && data?.data?.isPaid) {
+            isPaid = true;
+            break;
+          }
+
+          if (attempt < maxAttempts) {
+            await sleep(2000);
+          }
+        }
+
+        if (isCancelled) return;
+
+        await fetchUser();
+        if (isPaid) {
+          toast.success("Payment processed. Credits updated.");
+          navigate("/");
+        } else {
+          toast("Payment is processing. Credits will update shortly.");
+          navigate("/");
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          toast.error(error.response?.data?.message || "Failed to verify payment");
+          navigate("/");
+        }
+      }
+    };
+
+    handlePaymentReturn();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pathname, search, axios, token, fetchUser, navigate]);
+
+  if (pathname.startsWith("/loading") || loadingUser) {
     return <Loading />;
   }
 

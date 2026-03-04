@@ -2,6 +2,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/apiError.js";
 import { ApiResponse } from "../../utils/apiResponse.js";
 import { Transaction } from "../models/transaction.model.js";
+import { User } from "../models/user.model.js";
 import Stripe from "stripe";
 
 
@@ -119,5 +120,63 @@ const purchasePlan = asyncHandler(async (req, res) => {
     )
 })
 
+const verifyPaymentSession = asyncHandler(async (req, res) => {
+    const stripe = getStripeClient();
+    const sessionId = String(req.query?.session_id || req.body?.session_id || "").trim();
+    const userId = req.user?._id;
 
-export { getAllPlans, purchasePlan }
+    if (!sessionId) {
+        throw new ApiError(400, "session_id is required")
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (!session) {
+        throw new ApiError(404, "Stripe session not found")
+    }
+
+    const transactionId = session?.metadata?.transactionId;
+    const appId = session?.metadata?.appId;
+
+    if (!transactionId || appId !== "samvaad-ai") {
+        throw new ApiError(400, "Invalid payment session metadata")
+    }
+
+    const isPaymentCompleted = session.payment_status === "paid" || session.status === "complete";
+
+    if (!isPaymentCompleted) {
+        return res.status(200).json(
+            new ApiResponse(200, {
+                isPaid: false,
+                sessionId
+            }, "Payment is not completed yet")
+        )
+    }
+
+    const updatedUnpaidTransaction = await Transaction.findOneAndUpdate(
+        { _id: transactionId, userId, isPaid: false },
+        { $set: { isPaid: true } },
+        { new: true }
+    );
+
+    let didUpdate = false;
+    if (updatedUnpaidTransaction) {
+        await User.findByIdAndUpdate(userId, {
+            $inc: { credits: updatedUnpaidTransaction.credits }
+        });
+        didUpdate = true;
+    }
+
+    const latestUser = await User.findById(userId).select("credits");
+
+    return res.status(200).json(
+        new ApiResponse(200, {
+            isPaid: true,
+            didUpdate,
+            credits: latestUser?.credits ?? 0,
+            sessionId
+        }, didUpdate ? "Payment verified and credits updated" : "Payment already verified")
+    )
+})
+
+
+export { getAllPlans, purchasePlan, verifyPaymentSession }
