@@ -45,6 +45,8 @@ app.use(async (req, res, next) => {
 //stripe webhooks
 
 app.use("/api/v1/webhooks", express.raw({ type: "application/json" }), webhookRouter)
+app.use("/api/webhooks", express.raw({ type: "application/json" }), webhookRouter)
+app.use("/api", express.raw({ type: "application/json" }), webhookRouter)
 
 app.use(express.json({limit:"16kb"}))
 app.use(express.urlencoded({extended:true,limit:"16kb"}))
@@ -69,6 +71,20 @@ app.get("/", (req, res) => {
 // Handle favicon requests to prevent unnecessary 404 errors in logs
 app.get("/favicon.ico", (req, res) => {
     return res.status(204).end()
+})
+
+app.get("/api/stripe", (req, res) => {
+    return res.status(405).json({
+        success: false,
+        message: "Method not allowed. Stripe webhook expects POST /api/stripe (or POST /api/v1/webhooks/stripe)."
+    })
+})
+
+app.get("/api/webhooks/stripe", (req, res) => {
+    return res.status(405).json({
+        success: false,
+        message: "Method not allowed. Stripe webhook expects POST /api/webhooks/stripe (or POST /api/v1/webhooks/stripe)."
+    })
 })
 
 // 404 handler for undefined routes

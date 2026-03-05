@@ -17,6 +17,19 @@ export const AppContextProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [loadingUser, setLoadingUser] = useState(true);
 
+  const refreshAccessToken = async () => {
+    const { data } = await axios.post("/api/v1/users/refresh-token", {});
+    const newAccessToken = data?.data?.accessToken;
+
+    if (!newAccessToken) {
+      throw new Error("Access token missing in refresh response");
+    }
+
+    setToken(newAccessToken);
+    localStorage.setItem("token", newAccessToken);
+    return newAccessToken;
+  };
+
   const fetchUser = async () => {
     try {
       const { data } = await axios.get("/api/v1/users/me", {
@@ -29,10 +42,23 @@ export const AppContextProvider = ({ children }) => {
       }
     } catch (error) {
       if (error?.response?.status === 401) {
-        setToken(null);
-        setUser(null);
-        localStorage.removeItem("token");
+        try {
+          const refreshedToken = await refreshAccessToken();
+          const { data } = await axios.get("/api/v1/users/me", {
+            headers: { Authorization: `Bearer ${refreshedToken}` },
+          });
+
+          if (data.success) {
+            setUser(data?.user || data?.data || null);
+            return;
+          }
+        } catch {
+          setToken(null);
+          setUser(null);
+          localStorage.removeItem("token");
+        }
       }
+
       toast.error(
         error.response?.data?.message ||
           "An error occurred while fetching user data",
@@ -191,6 +217,7 @@ export const AppContextProvider = ({ children }) => {
     loadingUser,
     fetchUser,
     fetchUsersChats,
+    refreshAccessToken,
     axios,
     createNewChat,
     logout,

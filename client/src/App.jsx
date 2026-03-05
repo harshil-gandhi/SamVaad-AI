@@ -14,7 +14,7 @@ import { Toaster, toast } from "react-hot-toast"
 
 
 const App = () => {
-  const { user, loadingUser, axios, token, fetchUser } = useAppContext();
+  const { user, loadingUser, axios, token, fetchUser, refreshAccessToken } = useAppContext();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { pathname, search } = useLocation();
@@ -50,14 +50,34 @@ const App = () => {
       try {
         const maxAttempts = 12;
         let isPaid = false;
+        let authToken = token;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           if (isCancelled) return;
 
-          const { data } = await axios.get("/api/v1/credits/verify-session", {
-            params: { session_id: sessionId },
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          let data;
+          try {
+            const response = await axios.get("/api/v1/credits/verify-session", {
+              params: { session_id: sessionId },
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+            data = response.data;
+          } catch (error) {
+            const message = String(error?.response?.data?.message || "").toLowerCase();
+            const isAuthExpired = error?.response?.status === 401 &&
+              (message.includes("jwt expired") || message.includes("unauthorized"));
+
+            if (isAuthExpired) {
+              authToken = await refreshAccessToken();
+              const retryResponse = await axios.get("/api/v1/credits/verify-session", {
+                params: { session_id: sessionId },
+                headers: { Authorization: `Bearer ${authToken}` },
+              });
+              data = retryResponse.data;
+            } else {
+              throw error;
+            }
+          }
 
           if (data?.success && data?.data?.isPaid) {
             isPaid = true;
@@ -92,7 +112,7 @@ const App = () => {
     return () => {
       isCancelled = true;
     };
-  }, [pathname, search, axios, token, fetchUser, navigate]);
+  }, [pathname, search, axios, token, fetchUser, navigate, refreshAccessToken]);
 
   if (pathname.startsWith("/loading") || loadingUser) {
     return <Loading />;

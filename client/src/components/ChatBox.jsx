@@ -203,13 +203,13 @@ const ChatBox = () => {
               className="w-full max-w-56 sm:max-w-64 drop-shadow-2xl"
             />
 
-            <div className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-500 via-white to-green-600 shadow-lg">
+            <div className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-gradient-to-r from-orange-500 via-white to-green-600 shadow-lg">
               <span className="text-xs font-semibold tracking-widest text-black">
                 MADE IN INDIA
               </span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 bg-clip-text pb-2 text-transparent">
+            <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 bg-clip-text pb-2 text-transparent ">
               Ask me anything...
             </h1>
 
@@ -246,12 +246,12 @@ const ChatBox = () => {
       {/* {input box} */}
       <form
         onSubmit={onSubmit}
-        className="bg-primary/20 dark:bg-[#583C79]/30 border border -primary dark:border-[#90609F]/30 rounded-full w-full max-w-3xl p-3 pl-4 mx-auto flex gap-4 items-center mb-15 mx-2 "
+        className="bg-primary/20 dark:bg-[#583C79]/30 border border -primary dark:border-[#90609F]/30 rounded-full w-full max-w-4xl lg:p-3 p-6 mx-auto flex gap-4 items-center mb-12 "
       >
         <select
           onChange={(e) => setMode(e.target.value.trim().toLowerCase())}
           value={mode}
-          className="text-sm pl-2 pr-2 outline-none bg-primary/20 dark:bg-[#583C79]/30  rounded-full py-1 
+          className="text-sm pl-2 pr-2 outline-none bg-primary/20 dark:bg-[#583C79]/30  rounded-full py-3 
         border border-primary dark:border-[#90609F]/30"
         >
           <option className="bg-white text-black hover:bg-gray-100" value="image">
@@ -273,7 +273,7 @@ const ChatBox = () => {
           <img
             src={loading ? assets.stop_icon : assets.send_icon}
             alt=""
-            className="w-8 cursor pointer"
+            className="w-11 cursor pointer "
           />
         </button>
       </form>
