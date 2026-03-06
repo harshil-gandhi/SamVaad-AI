@@ -33,7 +33,7 @@ const Message = ({ message, onImageClick }) => {
           <div
             className={`flex flex-col gap-1 ${
               shouldExpandAiBubble
-                ? "flex-[0.90] min-w-0 "
+                ? "flex-[0.93] min-w-0 "
                 : "w-fit max-w-xs sm:max-w-sm md:max-w-md"
             } bg-gray-200 dark:bg-[#57317C]/40 border border-gray-300 dark:border-[#80609F]/30 p-2 pl-4 pr-4 rounded-lg`}
           >

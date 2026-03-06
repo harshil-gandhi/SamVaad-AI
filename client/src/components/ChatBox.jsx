@@ -189,7 +189,7 @@ const ChatBox = () => {
       )}
       {/* {chat messages} */}
       <div ref={containerRef}
-        className={`flex flex-col flex-1 gap-0.5 px-8 py-4 overflow-y-auto ${
+        className={`flex flex-col flex-1 gap-0.5 px-2 py-2 overflow-y-auto ${
           messages.length === 0
             ? "items-center justify-center text-center gap-3 "
             : "items-start justify-start"
@@ -246,12 +246,12 @@ const ChatBox = () => {
       {/* {input box} */}
       <form
         onSubmit={onSubmit}
-        className="bg-primary/20 dark:bg-[#583C79]/30 border border -primary dark:border-[#90609F]/30 rounded-full w-full max-w-4xl lg:p-3 py-4 mx-auto flex gap-4 items-center mb-12 "
+        className="bg-primary/20 dark:bg-[#583C79]/30 border border -primary dark:border-[#90609F]/30 rounded-full w-full max-w-4xl lg:p-3 py-4 mx-auto flex gap-4 items-center mb-10  "
       >
         <select
           onChange={(e) => setMode(e.target.value.trim().toLowerCase())}
           value={mode}
-          className="text-sm pl-2 pr-2 outline-none bg-primary/20 dark:bg-[#583C79]/30  rounded-full py-3 md:ml-2 ml-4
+          className="text-sm pl-2 pr-1 outline-none bg-primary/20 dark:bg-[#583C79]/30  rounded-full py-3 md:ml-2 ml-4 
         border border-primary dark:border-[#90609F]/30"
         >
           <option className="bg-white text-black hover:bg-gray-100" value="image">

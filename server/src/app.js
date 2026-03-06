@@ -7,6 +7,7 @@ import chatRouter from "./routes/chat.routes.js"
 import messageRouter from "./routes/message.routes.js"
 import creditRouter from "./routes/credit.routes.js"
 import webhookRouter from "./routes/webhook.routes.js"
+import { stripeWebhook } from "./controllers/webhook.controller.js"
 import healthRouter from "./routes/health.routes.js"
 const app=express()
 
@@ -45,8 +46,6 @@ app.use(async (req, res, next) => {
 //stripe webhooks
 
 app.use("/api/v1/webhooks", express.raw({ type: "application/json" }), webhookRouter)
-app.use("/api/webhooks", express.raw({ type: "application/json" }), webhookRouter)
-app.use("/api", express.raw({ type: "application/json" }), webhookRouter)
 
 app.use(express.json({limit:"16kb"}))
 app.use(express.urlencoded({extended:true,limit:"16kb"}))
