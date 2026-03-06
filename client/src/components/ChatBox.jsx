@@ -165,7 +165,7 @@ const ChatBox = () => {
 
   const containerRef = useRef(null);
   return (
-    <div className="flex flex-1 flex-col justify-between h-screen">
+    <div className="flex flex-1 flex-col h-[100dvh]">
       {/* Full-screen image viewer */}
       {fullScreenImage && (
         <div 
@@ -189,7 +189,7 @@ const ChatBox = () => {
       )}
       {/* {chat messages} */}
       <div ref={containerRef}
-        className={`flex flex-col flex-1 gap-0.5 px-2 py-2 overflow-y-auto ${
+        className={`flex flex-col flex-1 gap-0.5 px-2 py-2 pb-28 overflow-y-auto ${
           messages.length === 0
             ? "items-center justify-center text-center gap-3 "
             : "items-start justify-start"
@@ -237,46 +237,47 @@ const ChatBox = () => {
           </div>
         )}
       </div>
-      {isImageMode && (
-        <label className="inline-flex  justify-start items-center gap-2 mb-3 text-m mx-auto text-gray-500 dark:text-gray-400 mb-2">
-          <p className="font-bold text-gray-700 dark:text-gray-300">Publish Generated Image to Community</p>
-          <input type="checkbox" checked={isPublished} onChange={() => setIsPublished(!isPublished)} className="scale-150"/>
-        </label>
-      )}
-      {/* {input box} */}
-      <form
-        onSubmit={onSubmit}
-        className="bg-primary/20 dark:bg-[#583C79]/30 border border -primary dark:border-[#90609F]/30 rounded-full w-full max-w-4xl lg:p-3 py-4 mx-auto flex gap-4 items-center mb-10  "
-      >
-        <select
-          onChange={(e) => setMode(e.target.value.trim().toLowerCase())}
-          value={mode}
-          className="text-sm pl-2 pr-1 outline-none bg-primary/20 dark:bg-[#583C79]/30  rounded-full py-3 md:ml-2 ml-4 
-        border border-primary dark:border-[#90609F]/30"
+      <div className="sticky bottom-0 z-20 w-full px-2 pb-3 pt-2 bg-grey-400 dark:bg-black backdrop-blur-md  ">
+        {isImageMode && (
+          <label className="inline-flex justify-start items-center gap-2 w-full max-w-4xl mx-auto text-m text-gray-500 dark:text-gray-400 mb-2">
+            <p className="font-bold text-gray-700 dark:text-gray-300">Publish Generated Image to Community</p>
+            <input type="checkbox" checked={isPublished} onChange={() => setIsPublished(!isPublished)} className="scale-150"/>
+          </label>
+        )}
+        {/* {input box} */}
+        <form
+          onSubmit={onSubmit}
+         className="bg-primary/20 dark:bg-[#583C79]/30 border border-black dark:border-[#90609F]/30 rounded-full w-full max-w-4xl lg:p-3 py-4 mx-auto flex gap-4 items-center"
         >
-          <option className="bg-white text-black hover:bg-gray-100" value="image">
-            Image
-          </option>
-          <option className="bg-white text-black hover:bg-gray-100" value="text">
-            Text
-          </option>
-        </select>
-        <input
-          type="text"
-          placeholder="Type your prompt here"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          className="flex-1 w-full text-md outline-none "
-          required
-        />
-        <button>
-          <img
-            src={loading ? assets.stop_icon : assets.send_icon}
-            alt=""
-            className="w-11 cursor pointer mr-3 "
+          <select
+            onChange={(e) => setMode(e.target.value.trim().toLowerCase())}
+            value={mode}
+            className="text-sm pl-2 pr-1 outline-none bg-primary/20 dark:bg-[#583C79]/30 rounded-full py-3 md:ml-2 ml-4 border border-primary dark:border-[#90609F]/30"
+          >
+            <option className="bg-white text-black hover:bg-gray-100" value="image">
+              Image
+            </option>
+            <option className="bg-white text-black hover:bg-gray-100" value="text">
+              Text
+            </option>
+          </select>
+          <input
+            type="text"
+            placeholder="Type your prompt here"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            className="flex-1 w-full text-md outline-none "
+            required
           />
-        </button>
-      </form>
+          <button>
+            <img
+              src={loading ? assets.stop_icon : assets.send_icon}
+              alt=""
+              className="w-11 cursor pointer mr-3 "
+            />
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
