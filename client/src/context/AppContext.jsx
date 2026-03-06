@@ -17,6 +17,14 @@ export const AppContextProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [loadingUser, setLoadingUser] = useState(true);
 
+  const clearAuthState = () => {
+    setToken(null);
+    setUser(null);
+    setChats([]);
+    setSelectedChat(null);
+    localStorage.removeItem("token");
+  };
+
   const refreshAccessToken = async () => {
     const { data } = await axios.post("/api/v1/users/refresh-token", {});
     const newAccessToken = data?.data?.accessToken;
@@ -52,10 +60,13 @@ export const AppContextProvider = ({ children }) => {
             setUser(data?.user || data?.data || null);
             return;
           }
+          clearAuthState();
+          return;
         } catch {
-          setToken(null);
-          setUser(null);
-          localStorage.removeItem("token");
+          // Expected when access/refresh token is expired or missing.
+          // Keep login page clean by silently resetting local auth state.
+          clearAuthState();
+          return;
         }
       }
 
@@ -98,11 +109,7 @@ export const AppContextProvider = ({ children }) => {
     } catch {
       // Ignore API logout failure and proceed with local cleanup.
     } finally {
-      setToken(null);
-      setUser(null);
-      setChats([]);
-      setSelectedChat(null);
-      localStorage.removeItem("token");
+      clearAuthState();
       navigate("/login");
       toast.success("Logged out successfully");
     }
