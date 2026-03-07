@@ -243,7 +243,7 @@ const ChatBox = () => {
           </div>
         )}
       </div>
-      <div className="sticky bottom-0 z-20 w-full px-2 pb-3 pt-2 bg-grey-400 dark:bg-black backdrop-blur-md  ">
+      <div className="sticky bottom-0  w-full px-2 pb-3 pt-2 bg-grey-400 dark:bg-black backdrop-blur-md  ">
         {isImageMode && (
           <label className="inline-flex justify-start items-center gap-2 w-full max-w-4xl mx-auto text-m text-gray-500 dark:text-gray-400 mb-2">
             <p className="font-bold text-gray-700 dark:text-gray-300">Publish Generated Image to Community</p>
