@@ -211,20 +211,41 @@ const inferMessageTypeFromMime = (mimeType) => {
 
 const toUtf8Text = (buffer) => Buffer.from(buffer).toString("utf8")
 
-let cachedPdfParseFn = null
+let cachedPdfParseModule = null
 
-const getPdfParseFn = async () => {
-    if (cachedPdfParseFn) return cachedPdfParseFn
+const getPdfParseModule = async () => {
+    if (cachedPdfParseModule) return cachedPdfParseModule
 
-    const pdfModule = await import("pdf-parse")
-    const candidate = pdfModule?.default || pdfModule?.pdfParse || pdfModule
+    cachedPdfParseModule = await import("pdf-parse")
+    return cachedPdfParseModule
+}
 
-    if (typeof candidate !== "function") {
-        throw new ApiError(500, "PDF parser module loaded but parser function was not found")
+const extractPdfText = async (buffer) => {
+    const pdfModule = await getPdfParseModule()
+
+    // Legacy API support: pdfParse(buffer)
+    const legacyParserFn = pdfModule?.default || pdfModule?.pdfParse
+    if (typeof legacyParserFn === "function") {
+        const parsed = await legacyParserFn(buffer)
+        return String(parsed?.text || "").trim()
     }
 
-    cachedPdfParseFn = candidate
-    return cachedPdfParseFn
+    // v2 API support: new PDFParse({ data: buffer }).getText()
+    const PDFParseClass = pdfModule?.PDFParse
+    if (typeof PDFParseClass === "function") {
+        const parser = new PDFParseClass({ data: buffer })
+
+        try {
+            const parsed = await parser.getText()
+            return String(parsed?.text || "").trim()
+        } finally {
+            if (typeof parser?.destroy === "function") {
+                await parser.destroy().catch(() => {})
+            }
+        }
+    }
+
+    throw new ApiError(500, "PDF parser module loaded but no compatible parser API was found")
 }
 
 const extractDocumentTextFromBuffer = async (file) => {
@@ -234,9 +255,7 @@ const extractDocumentTextFromBuffer = async (file) => {
     if (!buffer) return ""
 
     if (mime === "application/pdf") {
-        const pdfParseFn = await getPdfParseFn()
-        const parsed = await pdfParseFn(buffer)
-        return String(parsed?.text || "").trim()
+        return extractPdfText(buffer)
     }
 
     if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
@@ -735,7 +754,6 @@ const websiteMessageController = asyncHandler(async (req, res) => {
 
 const uploadQaMessageController = asyncHandler(async (req, res) => {
     const openai = getOpenAIClient()
-    const imagekit = getImageKitClient()
 
     const userId = req.user._id
     const { chatId, prompt, receivedKeys } = normalizeUploadQaPayload(req)
@@ -775,16 +793,9 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
         const fileName = String(uploadedFile?.originalname || `${Date.now()}-upload`)
         const fileSize = Number(uploadedFile?.size || 0)
 
-        const uploadDataUri = `data:${mimeType};base64,${Buffer.from(uploadedFile.buffer).toString("base64")}`
-
-        const uploaded = await imagekit.upload({
-            file: uploadDataUri,
-            fileName,
-            folder: `/samvaad-ai/uploads/${String(userId)}`,
-            useUniqueFileName: true,
-        })
-
         let sourceText = ""
+        let storedContent = ""
+
         if (messageType === "file") {
             sourceText = await extractDocumentTextFromBuffer(uploadedFile)
             sourceText = String(sourceText || "").replace(/\s+/g, " ").trim().slice(0, 28000)
@@ -794,13 +805,34 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
             throw new ApiError(422, "Could not extract readable text from the uploaded document. Please upload PDF, DOCX, TXT, CSV, MD, or JSON with readable text.")
         }
 
+        const uploadDataUri = `data:${mimeType};base64,${Buffer.from(uploadedFile.buffer).toString("base64")}`
+        let uploaded
+
+        try {
+            const imagekit = getImageKitClient()
+            uploaded = await imagekit.upload({
+                file: uploadDataUri,
+                fileName,
+                folder: `/samvaad-ai/uploads/${String(userId)}`,
+                useUniqueFileName: true,
+            })
+        } catch (error) {
+            const providerMessage = error?.message || error?.response?.data?.message || "Failed to upload file for analysis"
+            throw new ApiError(502, providerMessage)
+        }
+
+        storedContent = String(uploaded?.url || "").trim()
+        if (!storedContent) {
+            throw new ApiError(502, "File upload failed. Please try again.")
+        }
+
         const uploadedMessage = {
             role: "user",
             messageType,
             isImage: messageType === "image",
             isPublished: false,
             timestamp: Date.now(),
-            content: uploaded?.url || "",
+            content: storedContent,
             mediaMimeType: mimeType,
             mediaFileName: fileName,
             mediaSize: fileSize,
@@ -830,6 +862,10 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
     const sourceText = String(activeSourceMessage?.sourceText || "").trim()
     const sourceUrl = String(activeSourceMessage?.content || "").trim()
     const sourceName = String(activeSourceMessage?.mediaFileName || "Uploaded file")
+
+    if (sourceIsImage && !sourceUrl) {
+        throw new ApiError(422, "Uploaded image source is missing. Please upload the image again.")
+    }
 
     let aiResult
     if (sourceIsImage && sourceUrl) {

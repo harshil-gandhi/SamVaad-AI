@@ -96,8 +96,15 @@ app.use((req, res) => {
 
 // Global error handling middleware
 app.use((err, req, res, next) => {
-    const statusCode = err?.statusCode || 500
-    const message = err?.message || "Internal Server Error"
+    const isMulterError = err?.name === "MulterError"
+    const inferredStatusCode = isMulterError
+        ? (err?.code === "LIMIT_FILE_SIZE" ? 413 : 400)
+        : null
+
+    const statusCode = err?.statusCode || inferredStatusCode || 500
+    const message = isMulterError && err?.code === "LIMIT_FILE_SIZE"
+        ? "File is too large. Maximum upload size is 12MB."
+        : (err?.message || "Internal Server Error")
     const isProduction = process.env.NODE_ENV === "production"
     const safeMessage = isProduction && statusCode >= 500 ? "Internal Server Error" : message
 

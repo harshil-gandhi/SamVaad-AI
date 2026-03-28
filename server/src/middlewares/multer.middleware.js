@@ -24,8 +24,12 @@ const upload = multer({
 		files: 1
 	},
 	fileFilter: (req, file, cb) => {
-		if (!file?.mimetype || !allowedMimeTypes.has(file.mimetype)) {
-			return cb(new Error("Unsupported file type. Please upload image, PDF, DOCX, TXT, CSV, MD, or JSON."))
+		const mimeType = String(file?.mimetype || "").toLowerCase()
+
+		if (!mimeType || !allowedMimeTypes.has(mimeType)) {
+			const unsupportedFileError = new Error("Unsupported file type. Please upload image, PDF, DOCX, TXT, CSV, MD, or JSON.")
+			unsupportedFileError.statusCode = 400
+			return cb(unsupportedFileError)
 		}
 
 		cb(null, true)

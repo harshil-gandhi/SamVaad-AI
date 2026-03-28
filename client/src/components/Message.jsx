@@ -9,6 +9,9 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = 
   const isFileMessage = String(message?.messageType || "").toLowerCase() === "file";
   const mediaName = message?.mediaFileName || "Uploaded file";
   const mediaType = message?.mediaMimeType || "";
+  const fileHref = String(message?.content || "").trim();
+  const isPlaceholderFileHref = fileHref.startsWith("uploaded-file://");
+  const canOpenFileLink = Boolean(fileHref) && !isPlaceholderFileHref;
   const isStreamingAssistantText =
     message?.role === "assistant" &&
     !isImageMessage &&
@@ -56,15 +59,22 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = 
                 onClick={() => onImageClick?.(message.content)}
               />
             ) : isFileMessage ? (
-              <a
-                href={message.content}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm underline break-all"
-              >
-                📎 {mediaName}
-                {mediaType ? ` (${mediaType})` : ""}
-              </a>
+              canOpenFileLink ? (
+                <a
+                  href={fileHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm underline break-all"
+                >
+                  📎 {mediaName}
+                  {mediaType ? ` (${mediaType})` : ""}
+                </a>
+              ) : (
+                <span className="text-sm break-all opacity-85">
+                  📎 {mediaName}
+                  {mediaType ? ` (${mediaType})` : ""}
+                </span>
+              )
             ) : (
               <p className="text-sm break-words">{message.content}</p>
             )}
@@ -92,15 +102,22 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = 
                 onClick={() => onImageClick?.(message.content)}
               />
             ) : isFileMessage ? (
-              <a
-                href={message.content}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm underline break-all"
-              >
-                📎 {mediaName}
-                {mediaType ? ` (${mediaType})` : ""}
-              </a>
+              canOpenFileLink ? (
+                <a
+                  href={fileHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm underline break-all"
+                >
+                  📎 {mediaName}
+                  {mediaType ? ` (${mediaType})` : ""}
+                </a>
+              ) : (
+                <span className="text-sm break-all opacity-85">
+                  📎 {mediaName}
+                  {mediaType ? ` (${mediaType})` : ""}
+                </span>
+              )
             ) : (
               <div className="break-words">
                 {isStreamingAssistantText ? (
