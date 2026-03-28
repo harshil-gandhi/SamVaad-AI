@@ -4,8 +4,36 @@ import { useAppContext } from "../context/AppContext";
 import { useState } from "react";
 import moment from "moment";
 
+const isLikelyUrl = (value) => /^https?:\/\/\S+$/i.test(String(value || "").trim());
+
+const getChatPreviewText = (chat) => {
+  const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+
+  // Always use the first message preview (oldest in chat).
+  const firstMessage = messages[0];
+  if (firstMessage) {
+    const content = String(firstMessage?.content || "").trim();
+    const messageType = String(firstMessage?.messageType || "").toLowerCase();
+    const isMediaMessage =
+      Boolean(firstMessage?.isImage) ||
+      ["image", "video", "audio", "file"].includes(messageType);
+
+    if (isMediaMessage || isLikelyUrl(content)) {
+      const fileName = String(firstMessage?.mediaFileName || "").trim();
+      if (messageType === "file") return fileName ? `Uploaded file: ${fileName}` : "Uploaded file";
+      if (messageType === "video") return "Uploaded video";
+      if (messageType === "audio") return "Uploaded audio";
+      return "Uploaded image";
+    }
+
+    if (content) return content;
+  }
+
+  return String(chat?.name || "New Chat");
+};
+
 const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
-  const { chats, theme, setTheme, user, navigate, setSelectedChat, createNewChat, fetchUsersChats, logout, deleteChat } =
+  const { chats, theme, setTheme, user, navigate, setSelectedChat, createNewChat, logout, deleteChat } =
     useAppContext();
   const [search, setSearch] = useState("");
   const [isCreatingChat, setIsCreatingChat] = useState(false);
@@ -14,7 +42,6 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
     try {
       setIsCreatingChat(true);
       await createNewChat();
-      await fetchUsersChats();
       navigate("/");
       setIsMenuOpen(false);
     } finally {
@@ -70,7 +97,7 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
       <div className="flex-1 overflow-y-auto text-sm max-h-[calc(100vh-250px)] space-y-3 ">
         {chats
           .filter((chat) => {
-            const messageText = chat.messages?.[0]?.content || "";
+            const messageText = getChatPreviewText(chat);
             const nameText = chat.name || "";
 
             return (
@@ -78,16 +105,17 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
               nameText.toLowerCase().includes(search.toLowerCase())
             );
           })
-          .map((chat) => (
+          .map((chat) => {
+            const previewText = getChatPreviewText(chat);
+
+            return (
             <div onClick={() => {navigate("/"); setSelectedChat(chat); setIsMenuOpen(false);}}
             key={chat._id}
               className="p-2 px-4 dark:bg-[#57317C]/10 border border-gray-300 dark:border-[#80609F]/15 rounded-md cursor-pointer flex justify-between items-center group"
             >
               <div className="flex flex-col w-full">
                 <p className="text-sm truncate">
-                  {chat.messages.length > 0
-                    ? chat.messages[0].content.slice(0, 32)
-                    : chat.name}
+                  {previewText.slice(0, 48)}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-[#B1A6C0]">
                   {chat.updatedAt
@@ -102,7 +130,8 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
                 className="hidden  h-5 cursor-pointer group-hover:block not-dark:invert hover:scale-110 transition-all"
               />
             </div>
-          ))}
+            )
+          })}
       </div>
 
       {/* {communityImages} */}
@@ -141,7 +170,7 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
         <div className="flex flex-col text-sm">
           <p>Credits:{user?.credits || 0}</p>
           <p className="text-xs text-grey-400">
-            Purchase credits to use Samvaad AI
+            Purchase credits to use SamVaad AI
           </p>
         </div>
       </div>

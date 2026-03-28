@@ -4,7 +4,24 @@ import moment from "moment";
 import Markdown from "react-markdown";
 import prism from "prismjs";  
 
-const Message = ({ message, onImageClick }) => {
+const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = false }) => {
+  const isImageMessage = Boolean(message?.isImage);
+  const isFileMessage = String(message?.messageType || "").toLowerCase() === "file";
+  const mediaName = message?.mediaFileName || "Uploaded file";
+  const mediaType = message?.mediaMimeType || "";
+  const isStreamingAssistantText =
+    message?.role === "assistant" &&
+    !isImageMessage &&
+    !isFileMessage &&
+    Boolean(message?.__isStreaming);
+  const isEditableUserText =
+    canEdit &&
+    message?.role === "user" &&
+    !isImageMessage &&
+    !isFileMessage &&
+    typeof message?.content === "string" &&
+    message.content.trim().length > 0;
+
   const aiTextLength =
     !message.isImage && typeof message.content === "string"
       ? message.content.trim().length
@@ -19,8 +36,38 @@ const Message = ({ message, onImageClick }) => {
     <div className="w-full  ">
       {message.role === "user" ? (
         <div className="flex items-end justify-end gap-2 mb-4">
-          <div className="flex flex-col gap-1 max-w-xs sm:max-w-sm bg-gradient-to-r from-[#A456F7] to-[#3D81F6] text-white p-3 px-4 rounded-lg shadow-md">
-            <p className="text-sm break-words">{message.content}</p>
+          <div
+            className="flex flex-col gap-1 max-w-xs sm:max-w-sm bg-gradient-to-r from-[#A456F7] to-[#3D81F6] text-white p-3 px-4 rounded-lg shadow-md"
+            onContextMenu={
+              isEditableUserText
+                ? (e) => {
+                    e.preventDefault();
+                    onMessageRightClick?.(e, message, index);
+                  }
+                : undefined
+            }
+            title={isEditableUserText ? "Right click to edit this message" : undefined}
+          >
+            {isImageMessage ? (
+              <img
+                src={message.content}
+                alt={mediaName}
+                className="rounded-md w-full max-w-xs cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => onImageClick?.(message.content)}
+              />
+            ) : isFileMessage ? (
+              <a
+                href={message.content}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline break-all"
+              >
+                📎 {mediaName}
+                {mediaType ? ` (${mediaType})` : ""}
+              </a>
+            ) : (
+              <p className="text-sm break-words">{message.content}</p>
+            )}
             <span className="text-xs opacity-70">
               {moment(message.timestamp).fromNow()}
             </span>
@@ -44,11 +91,28 @@ const Message = ({ message, onImageClick }) => {
                 className="rounded-md w-full max-w-sm cursor-pointer hover:opacity-90 transition-opacity"
                 onClick={() => onImageClick?.(message.content)}
               />
+            ) : isFileMessage ? (
+              <a
+                href={message.content}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline break-all"
+              >
+                📎 {mediaName}
+                {mediaType ? ` (${mediaType})` : ""}
+              </a>
             ) : (
               <div className="break-words">
-                <div className="reset-tw">
-                  <Markdown>{message.content}</Markdown>
-                </div>
+                {isStreamingAssistantText ? (
+                  <p className="text-sm whitespace-pre-wrap">
+                    {message.content}
+                    <span className="inline-block ml-0.5 animate-pulse">▍</span>
+                  </p>
+                ) : (
+                  <div className="reset-tw">
+                    <Markdown>{message.content}</Markdown>
+                  </div>
+                )}
               </div>
             )}
             <span className="text-xs text-gray-500 dark:text-gray-400">

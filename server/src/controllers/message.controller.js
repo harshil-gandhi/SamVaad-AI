@@ -7,6 +7,7 @@ import axios from "axios"
 import { User } from "../models/user.model.js"
 import { getOpenAIClient } from "../config/openai.config.js"
 import { getImageKitClient } from "../config/imagekit.config.js"
+import mammoth from "mammoth"
 
 const URL_REGEX = /(https?:\/\/[^\s)]+)(?=\s|$)/i
 
@@ -24,6 +25,19 @@ const normalizeMessagePayload = (req) => {
     const isPublished = String(isPublishedRaw).toLowerCase() === "true"
 
     return { chatId, prompt, isPublished, receivedKeys: Object.keys(body) }
+}
+
+const normalizeUploadQaPayload = (req) => {
+    const body = req.body || {}
+
+    const chatId = String(
+        body.chatId ?? req.params?.chatId ?? req.query?.chatId ?? ""
+    ).trim()
+
+    const promptSource = body.prompt ?? body.message ?? body.question ?? ""
+    const prompt = String(promptSource).trim()
+
+    return { chatId, prompt, receivedKeys: Object.keys(body) }
 }
 
 const extractAssistantText = (content) => {
@@ -133,6 +147,144 @@ const createTextCompletion = async (openai, prompt) => {
     }
 
     throw new ApiError(502, getProviderErrorMessage(lastError))
+}
+
+const createVisionCompletion = async (openai, { prompt, imageUrl }) => {
+    const model = "gemini-2.5-flash"
+    const maxAttempts = 2
+    let lastError = null
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const result = await openai.chat.completions.create({
+                model,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "text",
+                                text: String(prompt || "Describe this image in detail").trim(),
+                            },
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: imageUrl,
+                                },
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            return result
+        } catch (error) {
+            lastError = error
+
+            const status = getProviderStatusCode(error)
+            const isRateLimited = isRateLimitError(error)
+            const isTransientProviderError = status >= 500 && status < 600
+
+            if ((isRateLimited || isTransientProviderError) && attempt < maxAttempts) {
+                await sleep(700 * attempt)
+                continue
+            }
+
+            if (isRateLimited) {
+                throw new ApiError(429, "AI is receiving too many requests right now. Please wait a few seconds and try again.")
+            }
+
+            throw new ApiError(502, getProviderErrorMessage(error))
+        }
+    }
+
+    throw new ApiError(502, getProviderErrorMessage(lastError))
+}
+
+const inferMessageTypeFromMime = (mimeType) => {
+    const value = String(mimeType || "").toLowerCase()
+    if (value.startsWith("image/")) return "image"
+    if (value.startsWith("video/")) return "video"
+    if (value.startsWith("audio/")) return "audio"
+    return "file"
+}
+
+const toUtf8Text = (buffer) => Buffer.from(buffer).toString("utf8")
+
+let cachedPdfParseFn = null
+
+const getPdfParseFn = async () => {
+    if (cachedPdfParseFn) return cachedPdfParseFn
+
+    const pdfModule = await import("pdf-parse")
+    const candidate = pdfModule?.default || pdfModule?.pdfParse || pdfModule
+
+    if (typeof candidate !== "function") {
+        throw new ApiError(500, "PDF parser module loaded but parser function was not found")
+    }
+
+    cachedPdfParseFn = candidate
+    return cachedPdfParseFn
+}
+
+const extractDocumentTextFromBuffer = async (file) => {
+    const mime = String(file?.mimetype || "").toLowerCase()
+    const buffer = file?.buffer
+
+    if (!buffer) return ""
+
+    if (mime === "application/pdf") {
+        const pdfParseFn = await getPdfParseFn()
+        const parsed = await pdfParseFn(buffer)
+        return String(parsed?.text || "").trim()
+    }
+
+    if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        const parsed = await mammoth.extractRawText({ buffer })
+        return String(parsed?.value || "").trim()
+    }
+
+    if (
+        mime === "text/plain" ||
+        mime === "text/markdown" ||
+        mime === "text/csv" ||
+        mime === "application/json"
+    ) {
+        return toUtf8Text(buffer).trim()
+    }
+
+    return ""
+}
+
+const buildDocumentQaPrompt = ({ question, documentName, documentText }) => {
+    return [
+        "You are helping a user ask questions about an uploaded document.",
+        "Answer strictly from the provided document text.",
+        "If data is missing in the document text, clearly say it is not available in the uploaded file.",
+        "Keep the answer concise, helpful, and structured.",
+        `Document name: ${documentName || "Uploaded file"}`,
+        "",
+        `User question: ${question}`,
+        "",
+        "Document text:",
+        documentText,
+    ].join("\n")
+}
+
+const findLatestUploadSourceMessage = (chat) => {
+    const messages = Array.isArray(chat?.messages) ? [...chat.messages] : []
+
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const current = messages[i]
+        const hasSourceText = Boolean(String(current?.sourceText || "").trim())
+        const hasImageUrl = current?.isImage && Boolean(String(current?.content || "").trim())
+
+        if (hasSourceText || hasImageUrl) {
+            return current
+        }
+    }
+
+    return null
 }
 
 const buildImagePrompt = (rawPrompt) => {
@@ -377,8 +529,8 @@ const imageMessageController = asyncHandler(async (req, res) => {
     // Get authenticated user for ownership + credit checks
     const userId = req.user._id
 
-    // Image generation costs 2 credits
-    if (req.user.credits < 2) {
+    // Image generation costs 3 credits
+    if (req.user.credits < 3) {
         return res
             .status(403)
             .json(new ApiResponse(403, null, "Not enough credits"))
@@ -476,10 +628,10 @@ const imageMessageController = asyncHandler(async (req, res) => {
             content: uploadResponse.url
     }
 
-    // Save assistant image message and deduct 2 credits
+    // Save assistant image message and deduct 3 credits
     chat.messages.push(reply)
     await chat.save()
-    await User.updateOne({ _id: userId }, { $inc: { credits: -2 } })
+    await User.updateOne({ _id: userId }, { $inc: { credits: -3 } })
 
     // Return generated image URL
     return res
@@ -581,8 +733,140 @@ const websiteMessageController = asyncHandler(async (req, res) => {
     }
 })
 
+const uploadQaMessageController = asyncHandler(async (req, res) => {
+    const openai = getOpenAIClient()
+    const imagekit = getImageKitClient()
+
+    const userId = req.user._id
+    const { chatId, prompt, receivedKeys } = normalizeUploadQaPayload(req)
+    const uploadedFile = req.file
+
+    if (!chatId || !prompt?.trim()) {
+        throw new ApiError(400, "chatId and prompt are required", [
+            `Received keys: ${receivedKeys.length ? receivedKeys.join(", ") : "none"}`
+        ])
+    }
+
+    // Upload/image document Q&A costs 3 credits
+    if (req.user.credits < 3) {
+        return res
+            .status(403)
+            .json(new ApiResponse(403, null, "Not enough credits"))
+    }
+
+    const chat = await Chat.findOne({ _id: chatId, userId })
+
+    if (!chat) {
+        throw new ApiError(404, "Chat not found")
+    }
+
+    if (!chat.name?.trim()) {
+        chat.name = prompt.trim().slice(0, 40) || "New Chat"
+    }
+    if (!chat.username?.trim()) {
+        chat.username = req.user?.username || "User"
+    }
+
+    let activeSourceMessage = null
+
+    if (uploadedFile) {
+        const mimeType = String(uploadedFile?.mimetype || "application/octet-stream")
+        const messageType = inferMessageTypeFromMime(mimeType)
+        const fileName = String(uploadedFile?.originalname || `${Date.now()}-upload`)
+        const fileSize = Number(uploadedFile?.size || 0)
+
+        const uploadDataUri = `data:${mimeType};base64,${Buffer.from(uploadedFile.buffer).toString("base64")}`
+
+        const uploaded = await imagekit.upload({
+            file: uploadDataUri,
+            fileName,
+            folder: `/samvaad-ai/uploads/${String(userId)}`,
+            useUniqueFileName: true,
+        })
+
+        let sourceText = ""
+        if (messageType === "file") {
+            sourceText = await extractDocumentTextFromBuffer(uploadedFile)
+            sourceText = String(sourceText || "").replace(/\s+/g, " ").trim().slice(0, 28000)
+        }
+
+        if (messageType === "file" && !sourceText) {
+            throw new ApiError(422, "Could not extract readable text from the uploaded document. Please upload PDF, DOCX, TXT, CSV, MD, or JSON with readable text.")
+        }
+
+        const uploadedMessage = {
+            role: "user",
+            messageType,
+            isImage: messageType === "image",
+            isPublished: false,
+            timestamp: Date.now(),
+            content: uploaded?.url || "",
+            mediaMimeType: mimeType,
+            mediaFileName: fileName,
+            mediaSize: fileSize,
+            sourceText,
+        }
+
+        chat.messages.push(uploadedMessage)
+        activeSourceMessage = uploadedMessage
+    } else {
+        activeSourceMessage = findLatestUploadSourceMessage(chat)
+    }
+
+    if (!activeSourceMessage) {
+        throw new ApiError(400, "Please upload an image or document first, then ask your question.")
+    }
+
+    chat.messages.push({
+        role: "user",
+        messageType: "text",
+        isImage: false,
+        isPublished: false,
+        timestamp: Date.now(),
+        content: prompt.trim(),
+    })
+
+    const sourceIsImage = Boolean(activeSourceMessage?.isImage)
+    const sourceText = String(activeSourceMessage?.sourceText || "").trim()
+    const sourceUrl = String(activeSourceMessage?.content || "").trim()
+    const sourceName = String(activeSourceMessage?.mediaFileName || "Uploaded file")
+
+    let aiResult
+    if (sourceIsImage && sourceUrl) {
+        aiResult = await createVisionCompletion(openai, {
+            prompt,
+            imageUrl: sourceUrl,
+        })
+    } else {
+        const qaPrompt = buildDocumentQaPrompt({
+            question: prompt,
+            documentName: sourceName,
+            documentText: sourceText,
+        })
+
+        aiResult = await createTextCompletion(openai, qaPrompt)
+    }
+
+    const aiMessage = aiResult?.choices?.[0]?.message
+    if (!aiMessage) {
+        throw new ApiError(500, "Failed to get response from AI")
+    }
+
+    const reply = buildSafeAssistantReply(aiMessage)
+    reply.content = `${reply.content}\n\nSource file: ${sourceName}`
+
+    chat.messages.push(reply)
+    await chat.save()
+    await User.updateOne({ _id: userId }, { $inc: { credits: -3 } })
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, reply, "Upload Q&A completed successfully"))
+})
+
 export {
     textMessageController,
     imageMessageController,
-    websiteMessageController
+    websiteMessageController,
+    uploadQaMessageController
 }

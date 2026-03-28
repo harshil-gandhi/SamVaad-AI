@@ -8,6 +8,7 @@ import Loading from "./pages/Loading";
 import { assets } from "./assets/assets";
 import { useState } from "react";
 import ChatBox from "./components/ChatBox";
+import Footer from "./components/footer";
 import "./assets/prism.css";
 import { useAppContext } from "./context/AppContext";
 import { Toaster, toast } from "react-hot-toast"
@@ -151,7 +152,8 @@ const App = () => {
           </Routes>
         </div>
       )}
-  
+
+      <Footer />
     </>
   );
 };

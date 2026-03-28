@@ -17,6 +17,11 @@ const chatSchema = new mongoose.Schema({
     
     messages: [
         {
+            messageType: {
+                type: String,
+                enum: ["text", "image", "video", "audio", "file"],
+                default: "text"
+            },
             isImage: {
                 type: Boolean,
                 required: true
@@ -36,6 +41,22 @@ const chatSchema = new mongoose.Schema({
             content: {
                 type: String,
                 required: true
+            },
+            mediaMimeType: {
+                type: String,
+                default: ""
+            },
+            mediaFileName: {
+                type: String,
+                default: ""
+            },
+            mediaSize: {
+                type: Number,
+                default: 0
+            },
+            sourceText: {
+                type: String,
+                default: ""
             }
         }
     ]

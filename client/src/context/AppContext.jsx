@@ -5,6 +5,33 @@ import axios from "axios";
 import toast from "react-hot-toast";
 const AppContext = createContext();
 
+const ACTIVE_CHAT_SESSION_KEY = "samvaad_active_chat_id";
+const SESSION_BOOTSTRAPPED_KEY = "samvaad_chat_session_bootstrapped";
+
+const getSessionValue = (key) => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const setSessionValue = (key, value) => {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore storage write errors.
+  }
+};
+
+const removeSessionValue = (key) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage remove errors.
+  }
+};
+
 axios.defaults.baseURL = import.meta.env.VITE_SERVER_URL;
 axios.defaults.withCredentials = true;
 
@@ -23,6 +50,8 @@ export const AppContextProvider = ({ children }) => {
     setChats([]);
     setSelectedChat(null);
     localStorage.removeItem("token");
+    removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
+    removeSessionValue(SESSION_BOOTSTRAPPED_KEY);
   };
 
   const refreshAccessToken = async () => {
@@ -83,17 +112,36 @@ export const AppContextProvider = ({ children }) => {
       if (!user) {
         toast.error("You must be logged in to create a chat");
         navigate("/");
-        return;
+        return null;
       }
 
-      await axios.post("/api/v1/chats/create", {}, {
+      const { data } = await axios.post("/api/v1/chats/create", {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (data?.success) {
+        const createdChat = data?.data || data?.chat || null;
+
+        if (createdChat?._id) {
+          setChats((prevChats) => [
+            createdChat,
+            ...prevChats.filter((chat) => chat._id !== createdChat._id),
+          ]);
+          setSelectedChat(createdChat);
+          setSessionValue(ACTIVE_CHAT_SESSION_KEY, createdChat._id);
+        }
+
+        return createdChat;
+      }
+
+      toast.error(data?.message || "Failed to create a new chat");
+      return null;
     } catch (error) {
       toast.error(
         error.response?.data?.message ||
           "An error occurred while creating a new chat",
       );
+      return null;
     }
   };
 
@@ -128,6 +176,7 @@ export const AppContextProvider = ({ children }) => {
         setChats((prevChats) => prevChats.filter((chat) => chat._id !== chatId));
         if (selectedChat?._id === chatId) {
           setSelectedChat(null);
+          removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
         }
         toast.success("Chat deleted successfully");
 
@@ -147,7 +196,7 @@ export const AppContextProvider = ({ children }) => {
   }
 
 
-  const fetchUsersChats = async () => {
+  const fetchUsersChats = async ({ forceNewForSession = false, preferredChatId = null } = {}) => {
     try {
       if (!user) {
         toast.error("You must be logged in to view your chats");
@@ -157,16 +206,45 @@ export const AppContextProvider = ({ children }) => {
       const { data } = await axios.get("/api/v1/chats", {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       if (data.success) {
-        const chatsList = data?.chats || data?.data || [];
+        let chatsList = data?.chats || data?.data || [];
+
+        if (forceNewForSession || chatsList.length === 0) {
+          const createdChat = await createNewChat();
+          if (createdChat?._id) {
+            preferredChatId = createdChat._id;
+          }
+
+          const refreshResponse = await axios.get("/api/v1/chats", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          const refreshData = refreshResponse?.data;
+          if (refreshData?.success) {
+            chatsList = refreshData?.chats || refreshData?.data || chatsList;
+          }
+        }
+
         setChats(chatsList);
-        // If there are no chats, create a new one and fetch again to set it as selected
+
         if (chatsList.length === 0) {
-         await createNewChat();
-         return fetchUsersChats();  
-        } 
-        else{
-          setSelectedChat(chatsList[0]);
+          setSelectedChat(null);
+          removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
+          return;
+        }
+
+        const persistedChatId = getSessionValue(ACTIVE_CHAT_SESSION_KEY);
+        const currentSelectedChatId = selectedChat?._id;
+        const targetChatId =
+          preferredChatId || currentSelectedChatId || persistedChatId;
+
+        const nextSelectedChat =
+          chatsList.find((chat) => chat._id === targetChatId) || chatsList[0];
+
+        setSelectedChat(nextSelectedChat);
+        if (nextSelectedChat?._id) {
+          setSessionValue(ACTIVE_CHAT_SESSION_KEY, nextSelectedChat._id);
         }
       } else {
         toast.error(data.message || "Failed to fetch chats");
@@ -181,13 +259,23 @@ export const AppContextProvider = ({ children }) => {
 
   useEffect(() => {
     if (user) {
-      fetchUsersChats();
+      const isSessionBootstrapped = getSessionValue(SESSION_BOOTSTRAPPED_KEY) === "true";
+      fetchUsersChats({ forceNewForSession: !isSessionBootstrapped });
+      setSessionValue(SESSION_BOOTSTRAPPED_KEY, "true");
     } else {
       navigate("/login");
       setChats([]);
       setSelectedChat(null);
+      removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
+      removeSessionValue(SESSION_BOOTSTRAPPED_KEY);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (selectedChat?._id) {
+      setSessionValue(ACTIVE_CHAT_SESSION_KEY, selectedChat._id);
+    }
+  }, [selectedChat]);
 
   useEffect(() => {
     if(token){
