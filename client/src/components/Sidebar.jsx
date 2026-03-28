@@ -1,7 +1,6 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { assets } from "../assets/assets";
 import { useAppContext } from "../context/AppContext";
-import { useState } from "react";
 import moment from "moment";
 
 const isLikelyUrl = (value) => /^https?:\/\/\S+$/i.test(String(value || "").trim());
@@ -37,6 +36,27 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
     useAppContext();
   const [search, setSearch] = useState("");
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const sidebarRef = useRef(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (window.innerWidth >= 768) return;
+
+      if (sidebarRef.current && !sidebarRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isMenuOpen, setIsMenuOpen]);
 
   const handleCreateChat = async () => {
     try {
@@ -51,6 +71,7 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
 
   return (
     <div
+      ref={sidebarRef}
       className={`flex flex-col h-screen min-w-72 p-4 dark:bg-gradient-to-b dark:from-[#242124]/30 dark:to-[#000000]/30 border-r border-[#80609F]/30 backdrop-blur-3xl transition-all duration-500 max-md:absolute left-0 z-1 ${!isMenuOpen && "max-md:-translate-x-full"}`}
     >
       {/* {logo} */}
