@@ -127,7 +127,7 @@ const App = () => {
         <img
           src={assets.menu_icon}
           alt="menu"
-          className="h-5 top-3 left-3 w-8 absolute cursor-pointer not-dark:invert md:hidden "
+          className="h-8 top-3 left-3 w-10 absolute cursor-pointer not-dark:invert md:hidden "
           onClick={() => setIsMenuOpen(true)}
         />
       )}

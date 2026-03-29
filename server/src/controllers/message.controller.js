@@ -8,6 +8,7 @@ import { User } from "../models/user.model.js"
 import { getOpenAIClient } from "../config/openai.config.js"
 import { getImageKitClient } from "../config/imagekit.config.js"
 import mammoth from "mammoth"
+import mongoose from "mongoose"
 
 const URL_REGEX = /(https?:\/\/[^\s)]+)(?=\s|$)/i
 
@@ -21,10 +22,14 @@ const normalizeMessagePayload = (req) => {
     const promptSource = body.prompt ?? body.message ?? body.text ?? ""
     const prompt = String(promptSource).trim()
 
+    const editedMessageId = String(
+        body.editedMessageId ?? body.messageId ?? ""
+    ).trim()
+
     const isPublishedRaw = body.isPublished
     const isPublished = String(isPublishedRaw).toLowerCase() === "true"
 
-    return { chatId, prompt, isPublished, receivedKeys: Object.keys(body) }
+    return { chatId, prompt, isPublished, editedMessageId, receivedKeys: Object.keys(body) }
 }
 
 const normalizeUploadQaPayload = (req) => {
@@ -37,7 +42,47 @@ const normalizeUploadQaPayload = (req) => {
     const promptSource = body.prompt ?? body.message ?? body.question ?? ""
     const prompt = String(promptSource).trim()
 
-    return { chatId, prompt, receivedKeys: Object.keys(body) }
+    const editedMessageId = String(
+        body.editedMessageId ?? body.messageId ?? ""
+    ).trim()
+
+    return { chatId, prompt, editedMessageId, receivedKeys: Object.keys(body) }
+}
+
+const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(String(value || "").trim())
+
+const replaceEditedUserMessage = ({ chat, editedMessageId, prompt }) => {
+    const safeEditedMessageId = String(editedMessageId || "").trim()
+
+    if (!safeEditedMessageId || !isValidObjectId(safeEditedMessageId)) {
+        return { wasEdited: false, editedIndex: -1 }
+    }
+
+    const editedIndex = chat.messages.findIndex((message) => String(message?._id) === safeEditedMessageId)
+    if (editedIndex < 0) {
+        return { wasEdited: false, editedIndex: -1 }
+    }
+
+    const targetMessage = chat.messages[editedIndex]
+    const isEditableMessage =
+        targetMessage?.role === "user" &&
+        !targetMessage?.isImage &&
+        String(targetMessage?.messageType || "text").toLowerCase() !== "file"
+
+    if (!isEditableMessage) {
+        return { wasEdited: false, editedIndex: -1 }
+    }
+
+    targetMessage.content = prompt.trim()
+    targetMessage.timestamp = Date.now()
+    targetMessage.messageType = "text"
+
+    const nextMessage = chat.messages[editedIndex + 1]
+    if (nextMessage?.role === "assistant") {
+        chat.messages.splice(editedIndex + 1, 1)
+    }
+
+    return { wasEdited: true, editedIndex }
 }
 
 const extractAssistantText = (content) => {
@@ -455,7 +500,7 @@ const textMessageController = asyncHandler(async (req, res) => {
 
     // Get authenticated user and payload values
     const userId = req.user._id
-    const { chatId, prompt, receivedKeys } = normalizeMessagePayload(req)
+    const { chatId, prompt, editedMessageId, receivedKeys } = normalizeMessagePayload(req)
 
     // Basic payload validation
     if (!chatId || !prompt?.trim()) {
@@ -486,14 +531,18 @@ const textMessageController = asyncHandler(async (req, res) => {
         chat.username = req.user?.username || "User"
     }
 
-    // Store user message in chat history
-    chat.messages.push({
-        isImage: false,
-        isPublished: false,
-        timestamp: Date.now(),
-        role: "user",
-        content: prompt.trim()
-    })
+    const editResult = replaceEditedUserMessage({ chat, editedMessageId, prompt })
+
+    // Store user message in chat history when this is a new prompt (not edit)
+    if (!editResult.wasEdited) {
+        chat.messages.push({
+            isImage: false,
+            isPublished: false,
+            timestamp: Date.now(),
+            role: "user",
+            content: prompt.trim()
+        })
+    }
 
     try {
         // Send prompt to model and get assistant response
@@ -555,7 +604,7 @@ const imageMessageController = asyncHandler(async (req, res) => {
             .json(new ApiResponse(403, null, "Not enough credits"))
     }
 
-    const { chatId, prompt, isPublished, receivedKeys } = normalizeMessagePayload(req)
+    const { chatId, prompt, isPublished, editedMessageId, receivedKeys } = normalizeMessagePayload(req)
 
     // Validate required payload
     if (!chatId || !prompt?.trim()) {
@@ -592,14 +641,18 @@ const imageMessageController = asyncHandler(async (req, res) => {
         chat.username = req.user?.username || "User"
     }
 
-    // Save user's image generation request as a normal message
-    chat.messages.push({
-        isImage: false,
-        isPublished: false,
-        timestamp: Date.now(),
-        role: "user",
-        content: prompt.trim()
-    })
+    const editResult = replaceEditedUserMessage({ chat, editedMessageId, prompt })
+
+    // Save user's image generation request as a normal message when not editing
+    if (!editResult.wasEdited) {
+        chat.messages.push({
+            isImage: false,
+            isPublished: false,
+            timestamp: Date.now(),
+            role: "user",
+            content: prompt.trim()
+        })
+    }
 
     // Build a structured prompt for better person-specific outputs, then encode for URL
     const providerPrompt = buildImagePrompt(prompt)
@@ -662,7 +715,7 @@ const imageMessageController = asyncHandler(async (req, res) => {
 const websiteMessageController = asyncHandler(async (req, res) => {
     const openai = getOpenAIClient()
     const userId = req.user._id
-    const { chatId, prompt, receivedKeys } = normalizeMessagePayload(req)
+    const { chatId, prompt, editedMessageId, receivedKeys } = normalizeMessagePayload(req)
     const explicitUrl = extractFirstUrlFromText(req.body?.websiteUrl || "") || extractFirstUrlFromText(prompt)
 
     if (!chatId || !prompt?.trim()) {
@@ -697,13 +750,17 @@ const websiteMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Please paste a website URL first, then ask your question.")
     }
 
-    chat.messages.push({
-        isImage: false,
-        isPublished: false,
-        timestamp: Date.now(),
-        role: "user",
-        content: prompt.trim(),
-    })
+    const editResult = replaceEditedUserMessage({ chat, editedMessageId, prompt })
+
+    if (!editResult.wasEdited) {
+        chat.messages.push({
+            isImage: false,
+            isPublished: false,
+            timestamp: Date.now(),
+            role: "user",
+            content: prompt.trim(),
+        })
+    }
 
     try {
         const websiteText = await fetchWebsiteText(websiteUrl)

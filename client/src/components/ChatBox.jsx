@@ -162,7 +162,25 @@ const ChatBox = () => {
     setIsStreamingReply(false);
   };
 
-  const appendReplyWithStreaming = async (reply) => {
+  const appendReplyWithStreaming = async (reply, options = {}) => {
+    const replaceIndex = Number.isInteger(options?.replaceIndex)
+      ? options.replaceIndex
+      : null;
+
+    const insertOrReplaceReply = (prevMessages, nextReply) => {
+      if (
+        Number.isInteger(replaceIndex) &&
+        replaceIndex >= 0 &&
+        replaceIndex < prevMessages.length
+      ) {
+        return prevMessages.map((message, index) =>
+          index === replaceIndex ? nextReply : message
+        );
+      }
+
+      return [...prevMessages, nextReply];
+    };
+
     const isTextAssistantReply =
       reply?.role === "assistant" &&
       !reply?.isImage &&
@@ -170,22 +188,21 @@ const ChatBox = () => {
       reply.content.length > 0;
 
     if (!isTextAssistantReply) {
-      setMessages((prev) => [...prev, reply]);
+      setMessages((prev) => insertOrReplaceReply(prev, reply));
       return;
     }
 
     const fullContent = reply.content;
     const streamKey = `stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    setMessages((prev) => [
-      ...prev,
-      {
+    setMessages((prev) =>
+      insertOrReplaceReply(prev, {
         ...reply,
         content: "",
         __isStreaming: true,
         __streamKey: streamKey,
-      },
-    ]);
+      })
+    );
 
     setIsStreamingReply(true);
 
@@ -291,6 +308,7 @@ const ChatBox = () => {
     let promptCopy = "";
     let optimisticMessage = null;
     let originalEditedMessage = null;
+    let editedMessageId = "";
     const previousHiddenIndexes = [...hiddenResponseIndexes];
     const isEditingTarget = Number.isInteger(editTargetIndex) && editTargetIndex >= 0;
     try {
@@ -311,6 +329,7 @@ const ChatBox = () => {
 
       if (isEditingTarget) {
         originalEditedMessage = messages[editTargetIndex];
+        editedMessageId = String(originalEditedMessage?._id || "").trim();
 
         setMessages((prevMessages) =>
           prevMessages.map((message, index) =>
@@ -344,18 +363,26 @@ const ChatBox = () => {
             chatId: selectedChat._id,
             prompt: promptCopy,
             isPublished: isImageMode ? isPublished : false,
+            editedMessageId,
           });
 
       setLoading(false);
 
       if (data.success) {
         const reply = data?.data;
+        const replyReplaceIndex = isEditingTarget
+          ? findAssistantReplyIndexForUserMessage(messages, editTargetIndex)
+          : -1;
+
         if (reply) {
-          await appendReplyWithStreaming(reply);
+          await appendReplyWithStreaming(reply, {
+            replaceIndex: replyReplaceIndex >= 0 ? replyReplaceIndex : null,
+          });
         }
 
         if (editTargetIndex !== null) {
           setEditTargetIndex(null);
+          setHiddenResponseIndexes([]);
         }
 
         if (isUploadQaMode) {
@@ -675,7 +702,7 @@ const ChatBox = () => {
             placeholder={promptPlaceholder}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="flex-1 w-full text-md  outline-none "
+            className="flex-1 w-full text-lg  outline-none "
             required
           />
           <button>
