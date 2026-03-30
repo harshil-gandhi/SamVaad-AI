@@ -32,11 +32,24 @@ const getChatPreviewText = (chat) => {
 };
 
 const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
-  const { chats, theme, setTheme, user, navigate, setSelectedChat, createNewChat, logout, deleteChat } =
+  const { chats, theme, setTheme, user, navigate, setSelectedChat, createNewChat, logout, deleteChat, renameChat } =
     useAppContext();
   const [search, setSearch] = useState("");
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [renamedChatName, setRenamedChatName] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [mobileActionChatId, setMobileActionChatId] = useState(null);
   const sidebarRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const skipNextRowClickRef = useRef(false);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -68,6 +81,76 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
       setIsCreatingChat(false);
     }
   };
+
+  const handleLogoutClick = async (event) => {
+    event.stopPropagation();
+    const shouldLogout = window.confirm("You are about to log out. Are you sure?");
+    if (!shouldLogout) return;
+    await logout();
+  };
+
+  const handleStartRename = (event, chat) => {
+    event.stopPropagation();
+    setEditingChatId(chat?._id || null);
+    setRenamedChatName(String(chat?.name || "New Chat"));
+    setMobileActionChatId(null);
+  };
+
+  const handleCancelRename = (event) => {
+    event?.stopPropagation?.();
+    setEditingChatId(null);
+    setRenamedChatName("");
+    setIsRenaming(false);
+  };
+
+  const handleSaveRename = async (event, chatId) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    if (isRenaming) return;
+
+    const nextName = String(renamedChatName || "").trim();
+    if (!nextName) return;
+
+    try {
+      setIsRenaming(true);
+      const updated = await renameChat(chatId, nextName);
+      if (updated) {
+        setEditingChatId(null);
+        setRenamedChatName("");
+      }
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleDeleteChat = async (event, chatId) => {
+    event.stopPropagation();
+    setMobileActionChatId(null);
+    await deleteChat(event, chatId);
+  };
+
+  const handleChatRowTouchStart = (event, chatId) => {
+    if (window.innerWidth >= 768) return;
+
+    skipNextRowClickRef.current = false;
+    clearLongPressTimer();
+
+    longPressTimerRef.current = setTimeout(() => {
+      skipNextRowClickRef.current = true;
+      setMobileActionChatId(chatId);
+    }, 700);
+  };
+
+  const handleChatRowTouchEnd = () => {
+    clearLongPressTimer();
+  };
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, []);
 
   return (
     <div
@@ -128,28 +211,107 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
           })
           .map((chat) => {
             const previewText = getChatPreviewText(chat);
+            const isEditingThisChat = editingChatId === chat._id;
+            const isMobileActionsVisible = mobileActionChatId === chat._id;
 
             return (
-            <div onClick={() => {navigate("/"); setSelectedChat(chat); setIsMenuOpen(false);}}
+            <div onClick={() => {
+              if (skipNextRowClickRef.current) {
+                skipNextRowClickRef.current = false;
+                return;
+              }
+              setMobileActionChatId(null);
+              navigate("/");
+              setSelectedChat(chat);
+              setIsMenuOpen(false);
+            }}
+            onTouchStart={(e) => handleChatRowTouchStart(e, chat._id)}
+            onTouchEnd={handleChatRowTouchEnd}
+            onTouchMove={handleChatRowTouchEnd}
+            onTouchCancel={handleChatRowTouchEnd}
             key={chat._id}
               className="p-2 px-4 dark:bg-[#57317C]/10 border border-gray-300 dark:border-[#80609F]/15 rounded-md cursor-pointer flex justify-between items-center group"
             >
-              <div className="flex flex-col w-full">
-                <p className="text-sm truncate">
-                  {previewText.slice(0, 48)}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-[#B1A6C0]">
-                  {chat.updatedAt
+              <div className="flex flex-col w-full min-w-0">
+                {isEditingThisChat ? (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => handleSaveRename(e, chat._id)}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="text"
+                      value={renamedChatName}
+                      onChange={(e) => setRenamedChatName(e.target.value)}
+                      maxLength={60}
+                      autoFocus
+                      className="text-sm w-full bg-transparent border border-gray-400 dark:border-[#80609F]/30 rounded px-2 py-1 outline-none"
+                    />
+                    <button
+                      type="submit"
+                      className="text-xs px-2 py-1 rounded bg-green-600 text-white disabled:opacity-50"
+                      disabled={isRenaming || !String(renamedChatName || "").trim()}
+                    >
+                      {isRenaming ? "..." : "✓"}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded bg-gray-500 text-white"
+                      onClick={handleCancelRename}
+                      disabled={isRenaming}
+                    >
+                      ✕
+                    </button>
+                  </form>
+                ) : (
+                  <p className="text-sm truncate max-w-full" title={chat?.name || "New Chat"}>
+                    {String(chat?.name || "New Chat").slice(0, 48)}
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 dark:text-[#B1A6C0] truncate max-w-full">
+                  {previewText.slice(0, 40)} • {chat.updatedAt
                     ? moment(chat.updatedAt).fromNow()
                     : "No date"}
                 </p>
               </div>
 
-              <img onClick={(e) => deleteChat(e, chat._id)}
-                src={assets.bin_icon}
-                alt="delete"
-                className="hidden  h-5 cursor-pointer group-hover:block not-dark:invert hover:scale-110 transition-all"
-              />
+              {!isEditingThisChat && (
+                <>
+                  <div className="hidden md:group-hover:flex items-center gap-2 ml-2">
+                    <button
+                      type="button"
+                      onClick={(e) => handleStartRename(e, chat)}
+                      className="text-sm px-1 cursor-pointer not-dark:invert hover:scale-110 transition-all"
+                      title="Rename chat"
+                      aria-label="Rename chat"
+                    >
+                      ✎
+                    </button>
+                    <img onClick={(e) => handleDeleteChat(e, chat._id)}
+                      src={assets.bin_icon}
+                      alt="delete"
+                      className="h-5 cursor-pointer not-dark:invert hover:scale-110 transition-all"
+                    />
+                  </div>
+
+                  <div className={`${isMobileActionsVisible ? "flex" : "hidden"} md:hidden items-center gap-2 ml-2`}>
+                    <button
+                      type="button"
+                      onClick={(e) => handleStartRename(e, chat)}
+                      className="text-sm px-1 cursor-pointer not-dark:invert hover:scale-110 transition-all"
+                      title="Rename chat"
+                      aria-label="Rename chat"
+                    >
+                      ✎
+                    </button>
+                    <img onClick={(e) => handleDeleteChat(e, chat._id)}
+                      src={assets.bin_icon}
+                      alt="delete"
+                      className="h-5 cursor-pointer not-dark:invert hover:scale-110 transition-all"
+                    />
+                  </div>
+                </>
+              )}
             </div>
             )
           })}
@@ -235,7 +397,9 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
             src={assets.logout_icon}
             alt="logout"
             className="h-5 cursor-pointer not-dark:invert group-hover:block pr-2 hover:scale-110 transition-all"
-            onClick={logout}
+            onClick={handleLogoutClick}
+            title="Log out (you will need to sign in again)"
+            aria-label="Log out"
           />
         )}
 

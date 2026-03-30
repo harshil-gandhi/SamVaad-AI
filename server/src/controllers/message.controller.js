@@ -510,7 +510,7 @@ const textMessageController = asyncHandler(async (req, res) => {
     }
 
     // Text message costs 1 credit
-    if (req.user.credits <= 0) {
+    if (req.user.credits < 2) {
         return res
             .status(403)
             .json(new ApiResponse(403, null, "Not enough credits"))
@@ -559,7 +559,7 @@ const textMessageController = asyncHandler(async (req, res) => {
         // Persist assistant message and deduct 1 credit
         chat.messages.push(reply)
         await chat.save()
-        await User.updateOne({ _id: userId }, { $inc: { credits: -1 } })
+        await User.updateOne({ _id: userId }, { $inc: { credits: -2 } })
 
         // Return assistant text reply to client
         return res
@@ -822,8 +822,8 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
         ])
     }
 
-    // Upload/image document Q&A costs 3 credits
-    if (req.user.credits < 3) {
+    // Upload/image document Q&A costs 4 credits
+    if (req.user.credits < 4) {
         return res
             .status(403)
             .json(new ApiResponse(403, null, "Not enough credits"))
@@ -950,7 +950,7 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
 
     chat.messages.push(reply)
     await chat.save()
-    await User.updateOne({ _id: userId }, { $inc: { credits: -3 } })
+    await User.updateOne({ _id: userId }, { $inc: { credits: -4 } })
 
     return res
         .status(200)

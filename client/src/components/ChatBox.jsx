@@ -254,7 +254,26 @@ const ChatBox = () => {
     setContextMenu({ visible: false, x: 0, y: 0, messageIndex: null });
   };
 
-  const handleMessageRightClick = (event, message, index) => {
+  const getClampedMenuPosition = (x, y) => {
+    const menuWidth = 168;
+    const menuHeight = 96;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const padding = 12;
+
+    const safeX = Math.max(
+      padding,
+      Math.min(Number(x) || padding, viewportWidth - menuWidth - padding)
+    );
+    const safeY = Math.max(
+      padding,
+      Math.min(Number(y) || padding, viewportHeight - menuHeight - padding)
+    );
+
+    return { x: safeX, y: safeY };
+  };
+
+  const openContextMenuForMessage = ({ x, y, message, index }) => {
     if (!isEditableUserTextMessage(message)) return;
 
     const lastEditableUserIndex = messages.reduce(
@@ -265,12 +284,82 @@ const ChatBox = () => {
 
     if (index !== lastEditableUserIndex) return;
 
+    const position = getClampedMenuPosition(x, y);
     setContextMenu({
       visible: true,
-      x: event.clientX,
-      y: event.clientY,
+      x: position.x,
+      y: position.y,
       messageIndex: index,
     });
+  };
+
+  const handleMessageRightClick = (event, message, index) => {
+    openContextMenuForMessage({
+      x: event.clientX,
+      y: event.clientY,
+      message,
+      index,
+    });
+  };
+
+  const handleMessageLongPress = (point, message, index) => {
+    openContextMenuForMessage({
+      x: point?.x,
+      y: point?.y,
+      message,
+      index,
+    });
+  };
+
+  const copyTextToClipboard = async (value) => {
+    const text = String(value || "");
+    if (!text.trim()) return false;
+
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    return copied;
+  };
+
+  const handleCopyFromContextMenu = async () => {
+    const messageIndex = Number(contextMenu.messageIndex);
+    if (!Number.isFinite(messageIndex) || messageIndex < 0) {
+      closeContextMenu();
+      return;
+    }
+
+    const targetMessage = messages[messageIndex];
+    const text = String(targetMessage?.content || "").trim();
+    if (!text) {
+      toast.error("No text to copy");
+      closeContextMenu();
+      return;
+    }
+
+    try {
+      const copied = await copyTextToClipboard(text);
+      if (copied) {
+        toast.success("Message copied");
+      } else {
+        toast.error("Failed to copy message");
+      }
+    } catch {
+      toast.error("Failed to copy message");
+    }
+
+    closeContextMenu();
   };
 
   const handleStartEditFromContextMenu = () => {
@@ -390,8 +479,12 @@ const ChatBox = () => {
         }
 
         // decrease credits only when response is successful
-        if (isImageMode || isUploadQaMode) {
+        if (isUploadQaMode) {
+          deductCreditsSafely(4);
+        } else if (isImageMode) {
           deductCreditsSafely(3);
+        } else if (isWebsiteMode) {
+          deductCreditsSafely(2);
         } else {
           deductCreditsSafely(1);
         }
@@ -539,6 +632,13 @@ const ChatBox = () => {
           <button
             type="button"
             className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#2a2431]"
+            onClick={handleCopyFromContextMenu}
+          >
+            Copy text
+          </button>
+          <button
+            type="button"
+            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-[#2a2431]"
             onClick={handleStartEditFromContextMenu}
           >
             Edit message
@@ -583,6 +683,7 @@ const ChatBox = () => {
               message={message} 
               onImageClick={(imageUrl) => setFullScreenImage(imageUrl)}
               onMessageRightClick={handleMessageRightClick}
+              onMessageLongPress={handleMessageLongPress}
               canEdit={index === lastEditableUserIndex}
             />
           ))

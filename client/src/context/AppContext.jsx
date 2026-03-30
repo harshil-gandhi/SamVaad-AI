@@ -195,6 +195,50 @@ export const AppContextProvider = ({ children }) => {
     }
   }
 
+  const renameChat = async (chatId, chatName) => {
+    try {
+      const name = String(chatName || "").trim();
+      if (!name) {
+        toast.error("Chat name cannot be empty");
+        return null;
+      }
+
+      const { data } = await axios.patch(
+        `/api/v1/chats/rename/${chatId}`,
+        { name },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!data?.success) {
+        toast.error(data?.message || "Failed to rename chat");
+        return null;
+      }
+
+      const updatedChat = data?.data;
+      if (!updatedChat?._id) return null;
+
+      setChats((prevChats) =>
+        prevChats.map((chat) =>
+          chat._id === updatedChat._id ? { ...chat, ...updatedChat } : chat
+        )
+      );
+
+      setSelectedChat((prevSelectedChat) =>
+        prevSelectedChat?._id === updatedChat._id
+          ? { ...prevSelectedChat, ...updatedChat }
+          : prevSelectedChat
+      );
+
+      toast.success("Chat renamed");
+      return updatedChat;
+    } catch (error) {
+      toast.error(error.response?.data?.message || "An error occurred while renaming the chat");
+      return null;
+    }
+  }
+
 
   const fetchUsersChats = async ({ forceNewForSession = false, preferredChatId = null } = {}) => {
     try {
@@ -316,7 +360,8 @@ export const AppContextProvider = ({ children }) => {
     axios,
     createNewChat,
     logout,
-    deleteChat
+    deleteChat,
+    renameChat
   };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };

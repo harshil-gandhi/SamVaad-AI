@@ -85,11 +85,46 @@ const deleteChatById = asyncHandler(async (req, res) => {
         .json(new ApiResponse(200, null, "Chat deleted successfully"))
 })
 
+// api controller for rename a chat by id
+const renameChatById = asyncHandler(async (req, res) => {
+    const chatId = req.params.id
+    const userId = req.user._id
+    const rawName = req.body?.name
+    const name = String(rawName || "").trim()
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        throw new ApiError(400, "Invalid chat ID")
+    }
+
+    if (!name) {
+        throw new ApiError(400, "Chat name is required")
+    }
+
+    if (name.length > 60) {
+        throw new ApiError(400, "Chat name must be 60 characters or less")
+    }
+
+    const updatedChat = await Chat.findOneAndUpdate(
+        { _id: chatId, userId },
+        { $set: { name } },
+        { new: true }
+    )
+
+    if (!updatedChat) {
+        throw new ApiError(404, "Chat not found")
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, updatedChat, "Chat renamed successfully"))
+})
+
 export {
     createChat,
     getChats,
     getChatById,
-    deleteChatById
+    deleteChatById,
+    renameChatById
 }
 
 

@@ -1,10 +1,12 @@
-import React ,{useEffect} from "react";
+import React, { useEffect, useRef } from "react";
 import { assets } from "../assets/assets";
 import moment from "moment";
 import Markdown from "react-markdown";
 import prism from "prismjs";  
 
-const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = false }) => {
+const Message = ({ message, index, onImageClick, onMessageRightClick, onMessageLongPress, canEdit = false }) => {
+  const longPressTimerRef = useRef(null);
+  const longPressTriggeredRef = useRef(false);
   const isImageMessage = Boolean(message?.isImage);
   const isFileMessage = String(message?.messageType || "").toLowerCase() === "file";
   const mediaName = message?.mediaFileName || "Uploaded file";
@@ -35,6 +37,44 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = 
     prism.highlightAll();
   }, [message]);
 
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, []);
+
+  const handleTouchStart = (event) => {
+    if (!isEditableUserText) return;
+
+    longPressTriggeredRef.current = false;
+    const touchPoint = event?.touches?.[0];
+    if (!touchPoint) return;
+
+    clearLongPressTimer();
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onMessageLongPress?.(
+        {
+          x: touchPoint.clientX,
+          y: touchPoint.clientY,
+        },
+        message,
+        index
+      );
+    }, 2000);
+  };
+
+  const handleTouchMoveOrEnd = () => {
+    clearLongPressTimer();
+  };
+
   return (
     <div className="w-full  ">
       {message.role === "user" ? (
@@ -49,6 +89,10 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, canEdit = 
                   }
                 : undefined
             }
+            onTouchStart={isEditableUserText ? handleTouchStart : undefined}
+            onTouchMove={isEditableUserText ? handleTouchMoveOrEnd : undefined}
+            onTouchEnd={isEditableUserText ? handleTouchMoveOrEnd : undefined}
+            onTouchCancel={isEditableUserText ? handleTouchMoveOrEnd : undefined}
             title={isEditableUserText ? "Right click to edit this message" : undefined}
           >
             {isImageMessage ? (
