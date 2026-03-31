@@ -21,7 +21,8 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true, 
-        minlength: 6
+        minlength: 8,
+        match: [/^[A-Za-z0-9_]{8,}$/, "Password can only contain letters, numbers, and underscore (_)"]
     },
     refreshToken: {
         type: String,

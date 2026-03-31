@@ -5,6 +5,8 @@ import { ApiResponse } from "../../utils/apiResponse.js";
 import jwt from "jsonwebtoken";
 import { Chat } from "../models/chat.model.js";
 
+const PASSWORD_REGEX = /^[A-Za-z0-9_]{8,}$/;
+
 
 const generateAccessRefreshToken = async (userId) => {
     try {
@@ -33,6 +35,13 @@ const registerUser = asyncHandler(async (req, res) => {
 
     if (!normalizedUsername || !normalizedEmail || !password?.trim()) {
         throw new ApiError(400, "All fields are required")
+    }
+
+    if (!PASSWORD_REGEX.test(String(password))) {
+        throw new ApiError(
+            400,
+            "Password must be at least 8 characters and contain only letters, numbers, and underscore (_)"
+        )
     }
 
 

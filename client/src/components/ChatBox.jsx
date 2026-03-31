@@ -42,6 +42,8 @@ const ChatBox = () => {
   const [fullScreenImage, setFullScreenImage] = useState(null);
   const [editTargetIndex, setEditTargetIndex] = useState(null);
   const [hiddenResponseIndexes, setHiddenResponseIndexes] = useState([]);
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -50,6 +52,8 @@ const ChatBox = () => {
   });
   const streamIntervalRef = useRef(null);
   const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const speechSessionRef = useRef({ basePrompt: "", finalTranscript: "" });
   const isImageMode = mode?.trim().toLowerCase() === "image";
   const isWebsiteMode = mode?.trim().toLowerCase() === "website";
   const isUploadQaMode = mode?.trim().toLowerCase() === "upload-qa";
@@ -141,6 +145,40 @@ const ChatBox = () => {
   const triggerFilePicker = () => {
     fileInputRef.current?.click();
   };
+
+  const getSpeechRecognitionConstructor = () => {
+    if (typeof window === "undefined") return null;
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  };
+
+  const requestMicrophonePermission = async () => {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      throw new Error("MIC_PERMISSION_API_UNAVAILABLE");
+    }
+
+    if (navigator?.permissions?.query) {
+      try {
+        const micPermission = await navigator.permissions.query({ name: "microphone" });
+        if (micPermission?.state === "denied") {
+          throw new Error("MIC_PERMISSION_BLOCKED_IN_BROWSER");
+        }
+      } catch (error) {
+        if (error?.message === "MIC_PERMISSION_BLOCKED_IN_BROWSER") {
+          throw error;
+        }
+        // Ignore unsupported permission query implementations and continue.
+      }
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+  };
+
+  const mergeSpeechPrompt = ({ basePrompt, finalTranscript, interimTranscript }) =>
+    [basePrompt, finalTranscript, interimTranscript]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" ");
 
   const onSelectFile = (e) => {
     const file = e?.target?.files?.[0] || null;
@@ -402,6 +440,9 @@ const ChatBox = () => {
     const isEditingTarget = Number.isInteger(editTargetIndex) && editTargetIndex >= 0;
     try {
       e.preventDefault();
+      if (isListening && recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
       if (loading || isStreamingReply) return;
       if (prompt.trim() === "") return;
       if (!user) {
@@ -529,11 +570,178 @@ const ChatBox = () => {
     }
   };
 
+  const handleStartListening = async () => {
+    if (loading || isStreamingReply) return;
 
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      toast.error("Microphone not supported in this browser");
+      return;
+    }
+
+    try {
+      // Request/check microphone permission on every mic click.
+      await requestMicrophonePermission();
+    } catch (error) {
+      const permissionErrorName = error?.name || "";
+
+      if (permissionErrorName === "NotAllowedError") {
+        toast.error("Microphone permission denied");
+        return;
+      }
+
+      if (permissionErrorName === "NotFoundError") {
+        toast.error("No microphone detected");
+        return;
+      }
+
+      if (error?.message === "MIC_PERMISSION_API_UNAVAILABLE") {
+        toast.error("Microphone permission API not available");
+        return;
+      }
+
+      if (error?.message === "MIC_PERMISSION_BLOCKED_IN_BROWSER") {
+        toast.error("Microphone is blocked in browser settings. Allow microphone for this site and try again.");
+        return;
+      }
+
+      toast.error("Unable to access microphone");
+      return;
+    }
+
+    speechSessionRef.current = {
+      basePrompt: prompt,
+      finalTranscript: "",
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setIsListening(false);
+      toast.error("Could not start microphone");
+    }
+  };
+
+  const handleStopListening = () => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    try {
+      recognition.stop();
+    } catch {
+      // Ignore stop errors from already-stopped sessions.
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      handleStopListening();
+      return;
+    }
+
+    handleStartListening();
+  };
+
+
+
+  useEffect(() => {
+    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+
+    if (!SpeechRecognitionCtor) {
+      setSpeechSupported(false);
+      recognitionRef.current = null;
+      return;
+    }
+
+    setSpeechSupported(true);
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event) => {
+      let nextFinalTranscript = speechSessionRef.current.finalTranscript;
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcriptPart = String(event.results[i]?.[0]?.transcript || "");
+        if (event.results[i].isFinal) {
+          nextFinalTranscript = `${nextFinalTranscript} ${transcriptPart}`.trim();
+        } else {
+          interimTranscript += `${transcriptPart} `;
+        }
+      }
+
+      speechSessionRef.current.finalTranscript = nextFinalTranscript;
+
+      const merged = mergeSpeechPrompt({
+        basePrompt: speechSessionRef.current.basePrompt,
+        finalTranscript: nextFinalTranscript,
+        interimTranscript,
+      });
+
+      setPrompt(merged);
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+
+      if (event?.error === "not-allowed") {
+        toast.error("Microphone permission denied");
+        return;
+      }
+
+      if (event?.error === "no-speech") {
+        toast.error("No speech detected");
+        return;
+      }
+
+      if (event?.error === "audio-capture") {
+        toast.error("No microphone detected");
+        return;
+      }
+
+      toast.error("Speech recognition failed");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      recognition.onstart = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+
+      try {
+        recognition.stop();
+      } catch {
+        // Ignore cleanup stop errors.
+      }
+
+      recognitionRef.current = null;
+      setIsListening(false);
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedChat) {
       clearActiveStream();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore stop errors from inactive recognizer.
+        }
+      }
       setMessages(selectedChat.messages);
       setEditTargetIndex(null);
       setHiddenResponseIndexes([]);
@@ -806,6 +1014,26 @@ const ChatBox = () => {
             className="flex-1 w-full text-lg  outline-none "
             required
           />
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={!speechSupported || loading || isStreamingReply}
+            title={
+              speechSupported
+                ? isListening
+                  ? "Stop microphone"
+                  : "Start microphone"
+                : "Microphone not supported"
+            }
+            aria-label={isListening ? "Stop microphone" : "Start microphone"}
+            className={`h-11 w-11 flex items-center justify-center rounded-full border text-lg transition-all ${
+              isListening
+                ? "bg-red-500 text-white border-red-500"
+                : "bg-primary/20 dark:bg-[#583C79]/30 border-primary dark:border-[#90609F]/30"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isListening ? "⏹" : "🎙️"}
+          </button>
           <button>
             <img
               src={loading ? assets.stop_icon : assets.send_icon}

@@ -3,6 +3,8 @@ import { useAppContext } from "../context/AppContext";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
+const REGISTER_PASSWORD_REGEX = /^[A-Za-z0-9_]{8,}$/;
+
 const Login = ({ initialMode = "login" }) => {
   const [state, setState] = useState(initialMode);
   const [username, setUsername] = useState("");
@@ -17,6 +19,14 @@ const Login = ({ initialMode = "login" }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (state === "register" && !REGISTER_PASSWORD_REGEX.test(String(password || ""))) {
+      toast.error(
+        "Password must be at least 8 characters and only use letters, numbers, and underscore (_)",
+      );
+      return;
+    }
+
     const url =
       state === "login" ? "/api/v1/users/login" : "/api/v1/users/register";
     try {
@@ -53,7 +63,7 @@ const Login = ({ initialMode = "login" }) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 m-auto items-start p-8 py-12 w-100 h-100 sm:w-[400px] text-gray-500 rounded-lg shadow-xl border border-gray-200 bg-white "
+      className="flex flex-col gap-3 m-auto items-start w-[92vw] max-w-[400px] max-h-[90vh] overflow-y-auto p-5 sm:p-8 py-8 sm:py-12 text-gray-500 rounded-lg shadow-xl border border-gray-200 bg-white"
     >
       <p className="text-2xl font-medium m-auto">
         <span className="text-purple-700">User</span>{" "}
@@ -92,6 +102,13 @@ const Login = ({ initialMode = "login" }) => {
             placeholder="type here"
             className="border border-gray-200 rounded w-full p-2 mt-1 outline-purple-700 pr-10"
             type={showPassword ? "text" : "password"}
+            minLength={state === "register" ? 8 : undefined}
+            pattern={state === "register" ? "[A-Za-z0-9_]{8,}" : undefined}
+            title={
+              state === "register"
+                ? "Minimum 8 characters. Only letters, numbers, and underscore (_) allowed."
+                : undefined
+            }
             required
           />
           <button
@@ -130,6 +147,9 @@ const Login = ({ initialMode = "login" }) => {
       </div>
       {state === "register" ? (
         <p>
+          <span className="block text-xs text-gray-500 mb-1">
+            Password rule: minimum 8 chars, only letters, numbers, and underscore (_)
+          </span>
           Already have account?{" "}
           <Link to="/login" className="text-purple-700 cursor-pointer">
             click here
