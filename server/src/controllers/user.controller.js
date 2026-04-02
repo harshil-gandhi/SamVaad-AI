@@ -4,6 +4,8 @@ import { User } from "../models/user.model.js";
 import { ApiResponse } from "../../utils/apiResponse.js";
 import jwt from "jsonwebtoken";
 import { Chat } from "../models/chat.model.js";
+import { getImageKitClient } from "../config/imagekit.config.js";
+import mongoose from "mongoose";
 
 const PASSWORD_REGEX = /^[A-Za-z0-9_]{8,}$/;
 
@@ -230,19 +232,91 @@ const getPublishedImages = asyncHandler(async (req, res) => {
         }
        },
        {
+        $sort: {
+            "messages.timestamp": -1,
+        },
+       },
+       {
         $project: {
             _id: 0,
+            messageId: "$messages._id",
+            chatId: "$_id",
             imageUrl: "$messages.content",
             username: "$username",
+            ownerId: "$userId",
 
         }   
        }
     ])
+
+    const currentUserId = String(req.user?._id || "")
+
+    const normalizedImages = publishedImageMessages.map((item) => ({
+        messageId: String(item?.messageId || ""),
+        chatId: String(item?.chatId || ""),
+        imageUrl: item?.imageUrl,
+        username: item?.username,
+        canDelete: String(item?.ownerId || "") === currentUserId,
+    }))
+
     return res
     .status(200)
     .json(
-        new ApiResponse(200, publishedImageMessages, "Published images fetched successfully")
+        new ApiResponse(200, normalizedImages, "Published images fetched successfully")
     )   
+})
+
+const deletePublishedImage = asyncHandler(async (req, res) => {
+    const userId = req.user?._id
+    const messageId = String(req.params?.messageId || "").trim()
+
+    if (!messageId || !mongoose.Types.ObjectId.isValid(messageId)) {
+        throw new ApiError(400, "A valid messageId is required")
+    }
+
+    const chat = await Chat.findOne({
+        userId,
+        "messages._id": messageId,
+    })
+
+    if (!chat) {
+        throw new ApiError(404, "Image not found or you are not allowed to delete it")
+    }
+
+    const imageMessageIndex = chat.messages.findIndex((message) => String(message?._id) === messageId)
+    if (imageMessageIndex < 0) {
+        throw new ApiError(404, "Image not found")
+    }
+
+    const targetMessage = chat.messages[imageMessageIndex]
+    if (!targetMessage?.isImage || !targetMessage?.isPublished) {
+        throw new ApiError(400, "Only published community images can be deleted")
+    }
+
+    const imageKitFileId = String(targetMessage?.mediaProviderFileId || "").trim()
+    let imageKitDeleted = false
+    let deleteNote = ""
+
+    if (imageKitFileId) {
+        try {
+            const imagekit = getImageKitClient()
+            await imagekit.deleteFile(imageKitFileId)
+            imageKitDeleted = true
+        } catch {
+            deleteNote = "Image removed from community, but storage cleanup on ImageKit could not be completed."
+        }
+    } else {
+        deleteNote = "Image removed from community. This older image has no stored ImageKit file ID for storage cleanup."
+    }
+
+    chat.messages.splice(imageMessageIndex, 1)
+    await chat.save()
+
+    const responseMessage = deleteNote || "Published image deleted successfully"
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, { messageId, imageKitDeleted }, responseMessage))
 })
 
 export {
@@ -251,6 +325,7 @@ export {
     logoutUser,
     refreshAccessToken,
     getCurrentUser,
-    getPublishedImages
+    getPublishedImages,
+    deletePublishedImage
 }
 

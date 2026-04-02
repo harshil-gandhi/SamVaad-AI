@@ -50,6 +50,10 @@ const chatSchema = new mongoose.Schema({
                 type: String,
                 default: ""
             },
+            mediaProviderFileId: {
+                type: String,
+                default: ""
+            },
             mediaSize: {
                 type: Number,
                 default: 0

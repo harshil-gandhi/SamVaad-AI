@@ -724,11 +724,14 @@ const imageMessageController = asyncHandler(async (req, res) => {
 
     // Prepare assistant image message
     const reply = {
+        messageType: "image",
         isImage: true,
         isPublished,
         timestamp: Date.now(),
         role: "assistant",
-            content: uploadResponse.url
+        content: uploadResponse.url,
+        mediaProviderFileId: String(uploadResponse?.fileId || "").trim(),
+        mediaFileName: String(uploadResponse?.name || uploadFileName || "").trim(),
     }
 
     // Save assistant image message and deduct 3 credits
@@ -930,6 +933,7 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
             content: storedContent,
             mediaMimeType: mimeType,
             mediaFileName: fileName,
+            mediaProviderFileId: String(uploaded?.fileId || "").trim(),
             mediaSize: fileSize,
             sourceText,
         }
