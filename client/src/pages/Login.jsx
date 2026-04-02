@@ -11,6 +11,7 @@ const Login = ({ initialMode = "login" }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { axios, setToken } = useAppContext();
 
   useEffect(() => {
@@ -29,6 +30,11 @@ const Login = ({ initialMode = "login" }) => {
 
     const url =
       state === "login" ? "/api/v1/users/login" : "/api/v1/users/register";
+    const loadingToastId = toast.loading(
+      state === "login" ? "Logging you in..." : "Creating your account...",
+    );
+
+    setIsSubmitting(true);
     try {
       const { data } = await axios.post(url, { username, email, password });
       if (data.success) {
@@ -58,6 +64,9 @@ const Login = ({ initialMode = "login" }) => {
       toast.error(
         error?.response?.data?.message || "Authentication request failed",
       );
+    } finally {
+      toast.dismiss(loadingToastId);
+      setIsSubmitting(false);
     }
   };
   return (
@@ -165,9 +174,20 @@ const Login = ({ initialMode = "login" }) => {
       )}
       <button
         type="submit"
-        className="bg-purple-700 hover:bg-purple-800 transition-all text-white w-full py-2 rounded-md cursor-pointer"
+        disabled={isSubmitting}
+        className={`w-full py-2 rounded-md transition-all text-white ${
+          isSubmitting
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-purple-700 hover:bg-purple-800 cursor-pointer"
+        }`}
       >
-        {state === "register" ? "Create Account" : "Login"}
+        {isSubmitting
+          ? state === "register"
+            ? "Creating..."
+            : "Logging in..."
+          : state === "register"
+            ? "Create Account"
+            : "Login"}
       </button>
     </form>
   );

@@ -3,7 +3,19 @@ import { assets } from "../assets/assets";
 import { useAppContext } from "../context/AppContext";
 import moment from "moment";
 
+const SIDEBAR_CHAT_TITLE_MAX_LENGTH = 22;
+
 const isLikelyUrl = (value) => /^https?:\/\/\S+$/i.test(String(value || "").trim());
+
+const formatSidebarChatTitle = (name) => {
+  const safeName = String(name || "New Chat");
+
+  if (safeName.length <= SIDEBAR_CHAT_TITLE_MAX_LENGTH) {
+    return safeName;
+  }
+
+  return `${safeName.slice(0, SIDEBAR_CHAT_TITLE_MAX_LENGTH)}...`;
+};
 
 const getChatPreviewText = (chat) => {
   const messages = Array.isArray(chat?.messages) ? chat.messages : [];
@@ -265,13 +277,11 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
                   </form>
                 ) : (
                   <p className="text-sm truncate max-w-full" title={chat?.name || "New Chat"}>
-                    {String(chat?.name || "New Chat").slice(0, 48)}
+                    {formatSidebarChatTitle(chat?.name)}
                   </p>
                 )}
                 <p className="text-xs text-gray-500 dark:text-[#B1A6C0] truncate max-w-full">
-                  {previewText.slice(0, 40)} • {chat.updatedAt
-                    ? moment(chat.updatedAt).fromNow()
-                    : "No date"}
+                  {chat.updatedAt ? moment(chat.updatedAt).fromNow() : "No date"}
                 </p>
               </div>
 

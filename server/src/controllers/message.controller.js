@@ -51,6 +51,15 @@ const normalizeUploadQaPayload = (req) => {
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(String(value || "").trim())
 
+const shouldAutoGenerateChatName = (chatName) => {
+    const normalizedName = String(chatName || "").trim().toLowerCase()
+    return !normalizedName || normalizedName === "new chat"
+}
+
+const getChatNameFromPrompt = (prompt) => {
+    return String(prompt || "").trim().slice(0, 40)
+}
+
 const replaceEditedUserMessage = ({ chat, editedMessageId, prompt }) => {
     const safeEditedMessageId = String(editedMessageId || "").trim()
 
@@ -73,9 +82,25 @@ const replaceEditedUserMessage = ({ chat, editedMessageId, prompt }) => {
         return { wasEdited: false, editedIndex: -1 }
     }
 
+    const previousFirstMessageTitle =
+        editedIndex === 0 ? getChatNameFromPrompt(targetMessage?.content) : ""
+
     targetMessage.content = prompt.trim()
     targetMessage.timestamp = Date.now()
     targetMessage.messageType = "text"
+
+    if (editedIndex === 0) {
+        const currentChatName = String(chat?.name || "").trim()
+        const generatedName = getChatNameFromPrompt(prompt)
+        const shouldUpdateChatNameFromFirstMessage =
+            shouldAutoGenerateChatName(currentChatName) ||
+            (Boolean(previousFirstMessageTitle) &&
+                currentChatName.toLowerCase() === previousFirstMessageTitle.toLowerCase())
+
+        if (shouldUpdateChatNameFromFirstMessage && generatedName) {
+            chat.name = generatedName
+        }
+    }
 
     const nextMessage = chat.messages[editedIndex + 1]
     if (nextMessage?.role === "assistant") {
@@ -523,9 +548,12 @@ const textMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Chat not found")
     }
 
-    // Backfill legacy chats created before required fields existed
-    if (!chat.name?.trim()) {
-        chat.name = prompt.trim().slice(0, 40) || "New Chat"
+    // Auto-generate chat title from first prompt when chat is unnamed/default.
+    if (shouldAutoGenerateChatName(chat.name)) {
+        const generatedName = getChatNameFromPrompt(prompt)
+        if (generatedName) {
+            chat.name = generatedName
+        }
     }
     if (!chat.username?.trim()) {
         chat.username = req.user?.username || "User"
@@ -633,9 +661,12 @@ const imageMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Chat not found")
     }
 
-    // Backfill legacy chats created before required fields existed
-    if (!chat.name?.trim()) {
-        chat.name = prompt.trim().slice(0, 40) || "New Chat"
+    // Auto-generate chat title from first prompt when chat is unnamed/default.
+    if (shouldAutoGenerateChatName(chat.name)) {
+        const generatedName = getChatNameFromPrompt(prompt)
+        if (generatedName) {
+            chat.name = generatedName
+        }
     }
     if (!chat.username?.trim()) {
         chat.username = req.user?.username || "User"
@@ -724,7 +755,8 @@ const websiteMessageController = asyncHandler(async (req, res) => {
         ])
     }
 
-    if (req.user.credits <= 0) {
+    // Website mode costs 2 credits.
+    if (req.user.credits < 2) {
         return res
             .status(403)
             .json(new ApiResponse(403, null, "Not enough credits"))
@@ -736,8 +768,11 @@ const websiteMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Chat not found")
     }
 
-    if (!chat.name?.trim()) {
-        chat.name = prompt.trim().slice(0, 40) || "New Chat"
+    if (shouldAutoGenerateChatName(chat.name)) {
+        const generatedName = getChatNameFromPrompt(prompt)
+        if (generatedName) {
+            chat.name = generatedName
+        }
     }
     if (!chat.username?.trim()) {
         chat.username = req.user?.username || "User"
@@ -779,7 +814,7 @@ const websiteMessageController = asyncHandler(async (req, res) => {
 
         chat.messages.push(reply)
         await chat.save()
-        await User.updateOne({ _id: userId }, { $inc: { credits: -1 } })
+        await User.updateOne({ _id: userId }, { $inc: { credits: -2 } })
 
         return res
             .status(200)
@@ -835,8 +870,11 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Chat not found")
     }
 
-    if (!chat.name?.trim()) {
-        chat.name = prompt.trim().slice(0, 40) || "New Chat"
+    if (shouldAutoGenerateChatName(chat.name)) {
+        const generatedName = getChatNameFromPrompt(prompt)
+        if (generatedName) {
+            chat.name = generatedName
+        }
     }
     if (!chat.username?.trim()) {
         chat.username = req.user?.username || "User"

@@ -30,7 +30,7 @@ const isEditableUserTextMessage = (message) => {
 };
 
 const ChatBox = () => {
-  const { selectedChat, theme,axios,user,token,setUser } = useAppContext();
+  const { selectedChat, theme,axios,user,token,setUser,setChats,setSelectedChat } = useAppContext();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isStreamingReply, setIsStreamingReply] = useState(false);
@@ -80,6 +80,9 @@ const ChatBox = () => {
       };
     });
   };
+
+  const getChatNameFromPrompt = (value) =>
+    String(value || "").trim().slice(0, 40);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -508,6 +511,35 @@ const ChatBox = () => {
           await appendReplyWithStreaming(reply, {
             replaceIndex: replyReplaceIndex >= 0 ? replyReplaceIndex : null,
           });
+        }
+
+        if (isEditingTarget && editTargetIndex === 0 && selectedChat?._id) {
+          const nextTitle = getChatNameFromPrompt(promptCopy);
+          if (nextTitle) {
+            const nextUpdatedAt = new Date().toISOString();
+
+            setSelectedChat((prevSelectedChat) =>
+              prevSelectedChat?._id === selectedChat._id
+                ? {
+                    ...prevSelectedChat,
+                    name: nextTitle,
+                    updatedAt: nextUpdatedAt,
+                  }
+                : prevSelectedChat
+            );
+
+            setChats((prevChats) =>
+              prevChats.map((chat) =>
+                chat._id === selectedChat._id
+                  ? {
+                      ...chat,
+                      name: nextTitle,
+                      updatedAt: nextUpdatedAt,
+                    }
+                  : chat
+              )
+            );
+          }
         }
 
         if (editTargetIndex !== null) {
@@ -1032,7 +1064,21 @@ const ChatBox = () => {
                 : "bg-primary/20 dark:bg-[#583C79]/30 border-primary dark:border-[#90609F]/30"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {isListening ? "⏹" : "🎙️"}
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" />
+              <path d="M19 11a7 7 0 0 1-14 0" />
+              <path d="M12 18v3" />
+              <path d="M8 21h8" />
+            </svg>
           </button>
           <button>
             <img
