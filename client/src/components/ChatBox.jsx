@@ -30,7 +30,7 @@ const isEditableUserTextMessage = (message) => {
 };
 
 const ChatBox = () => {
-  const { selectedChat, theme,axios,user,token,setUser,setChats,setSelectedChat } = useAppContext();
+  const { selectedChat, theme,axios,user,token,setUser,setChats,setSelectedChat,createNewChat } = useAppContext();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isStreamingReply, setIsStreamingReply] = useState(false);
@@ -53,6 +53,7 @@ const ChatBox = () => {
   const streamIntervalRef = useRef(null);
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
+  const skipNextSelectedChatSyncRef = useRef(false);
   const speechSessionRef = useRef({ basePrompt: "", finalTranscript: "" });
   const isImageMode = mode?.trim().toLowerCase() === "image";
   const isWebsiteMode = mode?.trim().toLowerCase() === "website";
@@ -111,10 +112,10 @@ const ChatBox = () => {
     throw lastError;
   };
 
-  const sendUploadQaRequest = async ({ promptValue, file }) => {
+  const sendUploadQaRequest = async ({ chatId, promptValue, file }) => {
     let lastError;
     const formData = new FormData();
-    formData.append("chatId", selectedChat._id);
+    formData.append("chatId", chatId);
     formData.append("prompt", promptValue);
     if (file) {
       formData.append("file", file);
@@ -452,9 +453,18 @@ const ChatBox = () => {
         toast.error("Please login to send a message.");
         return;
       }
-      if (!selectedChat?._id) {
-        toast.error("Please create or select a chat first.");
-        return;
+      let activeChatId = selectedChat?._id;
+
+      if (!activeChatId) {
+        skipNextSelectedChatSyncRef.current = true;
+        const createdChat = await createNewChat();
+        activeChatId = createdChat?._id;
+
+        if (!activeChatId) {
+          skipNextSelectedChatSyncRef.current = false;
+          toast.error("Could not create chat. Please try again.");
+          return;
+        }
       }
 
       promptCopy = prompt;
@@ -491,9 +501,9 @@ const ChatBox = () => {
       setLoading(true);
 
       const { data } = isUploadQaMode
-        ? await sendUploadQaRequest({ promptValue: promptCopy, file: selectedFile })
+        ? await sendUploadQaRequest({ chatId: activeChatId, promptValue: promptCopy, file: selectedFile })
         : await sendMessageRequest({
-            chatId: selectedChat._id,
+            chatId: activeChatId,
             prompt: promptCopy,
             isPublished: isImageMode ? isPublished : false,
             editedMessageId,
@@ -766,6 +776,11 @@ const ChatBox = () => {
 
   useEffect(() => {
     if (selectedChat) {
+      if (skipNextSelectedChatSyncRef.current) {
+        skipNextSelectedChatSyncRef.current = false;
+        return;
+      }
+
       clearActiveStream();
       if (recognitionRef.current) {
         try {

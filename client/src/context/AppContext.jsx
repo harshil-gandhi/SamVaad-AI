@@ -6,7 +6,6 @@ import toast from "react-hot-toast";
 const AppContext = createContext();
 
 const ACTIVE_CHAT_SESSION_KEY = "samvaad_active_chat_id";
-const SESSION_BOOTSTRAPPED_KEY = "samvaad_chat_session_bootstrapped";
 
 const getSessionValue = (key) => {
   try {
@@ -51,7 +50,6 @@ export const AppContextProvider = ({ children }) => {
     setSelectedChat(null);
     localStorage.removeItem("token");
     removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
-    removeSessionValue(SESSION_BOOTSTRAPPED_KEY);
   };
 
   const refreshAccessToken = async () => {
@@ -240,7 +238,7 @@ export const AppContextProvider = ({ children }) => {
   }
 
 
-  const fetchUsersChats = async ({ forceNewForSession = false, preferredChatId = null } = {}) => {
+  const fetchUsersChats = async ({ preferredChatId = null } = {}) => {
     try {
       if (!user) {
         toast.error("You must be logged in to view your chats");
@@ -252,23 +250,7 @@ export const AppContextProvider = ({ children }) => {
       });
 
       if (data.success) {
-        let chatsList = data?.chats || data?.data || [];
-
-        if (forceNewForSession || chatsList.length === 0) {
-          const createdChat = await createNewChat();
-          if (createdChat?._id) {
-            preferredChatId = createdChat._id;
-          }
-
-          const refreshResponse = await axios.get("/api/v1/chats", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          const refreshData = refreshResponse?.data;
-          if (refreshData?.success) {
-            chatsList = refreshData?.chats || refreshData?.data || chatsList;
-          }
-        }
+        const chatsList = data?.chats || data?.data || [];
 
         setChats(chatsList);
 
@@ -283,12 +265,15 @@ export const AppContextProvider = ({ children }) => {
         const targetChatId =
           preferredChatId || currentSelectedChatId || persistedChatId;
 
-        const nextSelectedChat =
-          chatsList.find((chat) => chat._id === targetChatId) || chatsList[0];
+        const nextSelectedChat = targetChatId
+          ? chatsList.find((chat) => chat._id === targetChatId) || null
+          : null;
 
         setSelectedChat(nextSelectedChat);
         if (nextSelectedChat?._id) {
           setSessionValue(ACTIVE_CHAT_SESSION_KEY, nextSelectedChat._id);
+        } else {
+          removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
         }
       } else {
         toast.error(data.message || "Failed to fetch chats");
@@ -303,15 +288,12 @@ export const AppContextProvider = ({ children }) => {
 
   useEffect(() => {
     if (user) {
-      const isSessionBootstrapped = getSessionValue(SESSION_BOOTSTRAPPED_KEY) === "true";
-      fetchUsersChats({ forceNewForSession: !isSessionBootstrapped });
-      setSessionValue(SESSION_BOOTSTRAPPED_KEY, "true");
+      fetchUsersChats();
     } else {
       navigate("/login");
       setChats([]);
       setSelectedChat(null);
       removeSessionValue(ACTIVE_CHAT_SESSION_KEY);
-      removeSessionValue(SESSION_BOOTSTRAPPED_KEY);
     }
   }, [user]);
 
