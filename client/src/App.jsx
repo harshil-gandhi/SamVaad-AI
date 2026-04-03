@@ -15,7 +15,7 @@ import { Toaster, toast } from "react-hot-toast"
 
 
 const App = () => {
-  const { user, loadingUser, axios, token, fetchUser, refreshAccessToken } = useAppContext();
+  const { user, loadingUser, axios, token, fetchUser, refreshAccessToken, isFooterVisible } = useAppContext();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { pathname, search } = useLocation();
@@ -152,7 +152,7 @@ const App = () => {
           </Routes>
         </div>
       )}
-      {user && <Footer />}
+      {user && isFooterVisible && <Footer />}
 
     </>
   );

@@ -6,12 +6,14 @@ const Loading = () => {
 
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const {fetchUser} = useAppContext();
+  const { fetchUser, setIsFooterVisible } = useAppContext();
 
   useEffect(() => {
+    setIsFooterVisible(false);
+
     const isPaymentReturnRoute = pathname.startsWith("/loading/payment-success") || pathname.startsWith("/loading/payment-cancelled");
     if (isPaymentReturnRoute) {
-      return;
+      return () => setIsFooterVisible(true);
     }
 
     const timer = setTimeout(() => {
@@ -19,8 +21,11 @@ const Loading = () => {
       fetchUser(); // Fetch user data after loading
       navigate("/"); // Redirect to the home page
     }, 8000);
-    return () => clearTimeout(timer); // Cleanup the timer on component unmount
-  }, [pathname, fetchUser, navigate]);
+    return () => {
+      clearTimeout(timer); // Cleanup the timer on component unmount
+      setIsFooterVisible(true);
+    };
+  }, [pathname, fetchUser, navigate, setIsFooterVisible]);
 
   return (
     <div

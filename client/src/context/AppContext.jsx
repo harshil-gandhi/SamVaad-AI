@@ -42,6 +42,7 @@ export const AppContextProvider = ({ children }) => {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [token, setToken] = useState(localStorage.getItem("token") || null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [isFooterVisible, setIsFooterVisible] = useState(true);
 
   const clearAuthState = () => {
     setToken(null);
@@ -343,7 +344,9 @@ export const AppContextProvider = ({ children }) => {
     createNewChat,
     logout,
     deleteChat,
-    renameChat
+    renameChat,
+    isFooterVisible,
+    setIsFooterVisible
   };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
