@@ -10,7 +10,8 @@ import { getImageKitClient } from "../config/imagekit.config.js"
 import mammoth from "mammoth"
 import mongoose from "mongoose"
 
-const URL_REGEX = /(https?:\/\/[^\s)]+)(?=\s|$)/i
+const URL_REGEX = /(https?:\/\/[^\s)]+|www\.[^\s)]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s)]*)?)(?=\s|$)/i
+const MAX_WEBSITE_TEXT_CHARS = 8000
 
 const normalizeMessagePayload = (req) => {
     const body = req.body || {}
@@ -392,7 +393,25 @@ const buildImagePrompt = (rawPrompt) => {
 const extractFirstUrlFromText = (text) => {
     const value = String(text || "").trim()
     const match = value.match(URL_REGEX)
-    return match?.[1]?.trim() || ""
+    return normalizeWebsiteUrl(match?.[1] || "")
+}
+
+const normalizeWebsiteUrl = (value) => {
+    let url = String(value || "").trim()
+
+    if (!url) return ""
+
+    url = url.replace(/[),.]+$/g, "")
+
+    if (/^www\./i.test(url)) {
+        url = `https://${url}`
+    }
+
+    if (!/^https?:\/\//i.test(url) && /^[a-z0-9-]+\.[a-z]{2,}/i.test(url)) {
+        url = `https://${url}`
+    }
+
+    return url
 }
 
 const stripUrlsFromText = (text) => {
@@ -439,9 +458,11 @@ const findLatestWebsiteUrlInChat = (chat) => {
 }
 
 const fetchWebsiteText = async (targetUrl) => {
+    const normalizedTargetUrl = normalizeWebsiteUrl(targetUrl)
+
     let parsedUrl
     try {
-        parsedUrl = new URL(targetUrl)
+        parsedUrl = new URL(normalizedTargetUrl)
     } catch {
         throw new ApiError(400, "Please provide a valid website URL starting with http:// or https://")
     }
@@ -476,7 +497,7 @@ const fetchWebsiteText = async (targetUrl) => {
         throw new ApiError(422, "Website content is too short or not readable. Please try another page URL.")
     }
 
-    return text.slice(0, 24000)
+    return text.slice(0, MAX_WEBSITE_TEXT_CHARS)
 }
 
 const buildWebsiteQuestion = (prompt, explicitUrl) => {
@@ -496,6 +517,7 @@ const buildWebsiteChatPrompt = ({ websiteUrl, question, websiteText }) => {
         "Answer strictly from the provided website content.",
         "If information is not present in the content, clearly say that it is not available on the page.",
         "Keep response concise, clear, and helpful.",
+        "The website text may be truncated, so prioritize the most relevant facts.",
         `Website URL: ${websiteUrl}`,
         "",
         `User question: ${question}`,
@@ -782,7 +804,7 @@ const websiteMessageController = asyncHandler(async (req, res) => {
     }
 
     const fallbackUrlFromChat = findLatestWebsiteUrlInChat(chat)
-    const websiteUrl = explicitUrl || fallbackUrlFromChat
+    const websiteUrl = normalizeWebsiteUrl(explicitUrl || fallbackUrlFromChat)
 
     if (!websiteUrl) {
         throw new ApiError(400, "Please paste a website URL first, then ask your question.")
