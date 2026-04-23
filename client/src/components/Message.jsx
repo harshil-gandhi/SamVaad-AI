@@ -136,7 +136,7 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, onMessageL
               shouldExpandAiBubble
                 ? "flex-[0.93] min-w-0 "
                 : "w-fit max-w-xs sm:max-w-sm md:max-w-md"
-            } bg-gray-200 dark:bg-[#57317C]/40 border border-gray-300 dark:border-[#80609F]/30 p-2 pl-4 pr-4 rounded-lg`}
+            } bg-gray-200 dark:bg-[#57317C]/40 border border-gray-300 dark:border-[#80609F]/30 p-2 pl-4 pr-4 rounded-lg overflow-hidden`}
           >
             {message.isImage ? (
               <img
@@ -170,7 +170,7 @@ const Message = ({ message, index, onImageClick, onMessageRightClick, onMessageL
                     <span className="inline-block ml-0.5 animate-pulse">▍</span>
                   </p>
                 ) : (
-                  <div className="reset-tw">
+                  <div className="reset-tw chat-markdown">
                     <Markdown>{message.content}</Markdown>
                   </div>
                 )}

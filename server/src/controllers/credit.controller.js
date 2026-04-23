@@ -63,6 +63,10 @@ const purchasePlan = asyncHandler(async (req, res) => {
     const normalizedPlanId = String(rawPlanId).trim().toLowerCase();
     const userId = req.user?._id;
 
+    if (!req.user?.isBookingApproved) {
+        throw new ApiError(403, "Payment option is available only after admin approves your booking")
+    }
+
     if (!normalizedPlanId) {
         throw new ApiError(400, "planId is required")
     }

@@ -361,9 +361,11 @@ const Sidebar = ({ isMenuOpen, setIsMenuOpen }) => {
           className="w-4.5 dark:invert"
         />
         <div className="flex flex-col text-sm">
-          <p>Credits:{user?.credits || 0}</p>
+          <p>{String(user?.role || "").toLowerCase() === "admin" ? "Edit Packages" : `Credits:${user?.credits || 0}`}</p>
           <p className="text-xs text-grey-400">
-            Purchase credits to use SamVaad AI
+            {String(user?.role || "").toLowerCase() === "admin"
+              ? "Manage package plans"
+              : "Payment option available after booking approval"}
           </p>
         </div>
       </div>

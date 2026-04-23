@@ -61,6 +61,116 @@ const getChatNameFromPrompt = (prompt) => {
     return String(prompt || "").trim().slice(0, 40)
 }
 
+const MAX_MEMORY_CHATS = 10
+const MAX_MEMORY_MESSAGES_PER_CHAT = 6
+const MAX_MEMORY_CHARS = 7000
+const MAX_MEMORY_MESSAGE_CHARS = 220
+
+const compactMemoryText = (value, maxLength = MAX_MEMORY_MESSAGE_CHARS) => {
+    const text = String(value || "").replace(/\s+/g, " ").trim()
+    if (!text) return ""
+    return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text
+}
+
+const truncateMemoryBlock = (value, maxLength = MAX_MEMORY_CHARS) => {
+    const text = String(value || "").trim()
+    if (!text) return ""
+    return text.length > maxLength ? `${text.slice(0, maxLength).trim()}…` : text
+}
+
+const isMeaningfulMemoryMessage = (message) => {
+    const role = String(message?.role || "").trim().toLowerCase()
+    const messageType = String(message?.messageType || "text").trim().toLowerCase()
+    const content = String(message?.content || "").trim()
+
+    if (!content) return false
+    if (!role || !["user", "assistant"].includes(role)) return false
+
+    // Skip URL-only / media-only payloads because they add noise to the prompt.
+    if (messageType !== "text" && messageType !== "") {
+        return false
+    }
+
+    return true
+}
+
+const formatMemoryTranscript = (messages, label) => {
+    const transcript = (Array.isArray(messages) ? messages : [])
+        .filter(isMeaningfulMemoryMessage)
+        .slice(-MAX_MEMORY_MESSAGES_PER_CHAT)
+        .map((message) => {
+            const speaker = message?.role === "assistant" ? "Assistant" : "User"
+            return `${speaker}: ${compactMemoryText(message?.content)}`
+        })
+
+    if (!transcript.length) return ""
+
+    return [label, ...transcript].join("\n")
+}
+
+const buildChatMemoryContext = async ({ chat, userId }) => {
+    const currentChatBlock = formatMemoryTranscript(chat?.messages, "Current chat memory:")
+
+    const recentChats = await Chat.find({
+        userId,
+        _id: { $ne: chat?._id },
+    })
+        .sort({ updatedAt: -1 })
+        .limit(MAX_MEMORY_CHATS)
+        .select("name messages updatedAt")
+
+    const recentChatBlocks = recentChats
+        .map((recentChat) => {
+            const chatName = compactMemoryText(recentChat?.name || "Previous chat", 60) || "Previous chat"
+            return formatMemoryTranscript(recentChat?.messages, `Chat: ${chatName}`)
+        })
+        .filter(Boolean)
+
+    const sections = []
+
+    if (currentChatBlock) {
+        sections.push(currentChatBlock)
+    }
+
+    if (recentChatBlocks.length) {
+        sections.push("Recent chats memory:", ...recentChatBlocks)
+    }
+
+    return truncateMemoryBlock(sections.join("\n\n"), MAX_MEMORY_CHARS)
+}
+
+const buildConversationMemoryMessage = async ({ chat, userId }) => {
+    const memoryContext = await buildChatMemoryContext({ chat, userId })
+
+    if (!memoryContext) {
+        return null
+    }
+
+    return {
+        role: "system",
+        content: `Conversation memory:\n${memoryContext}`,
+    }
+}
+
+const buildMemoryAwareImagePrompt = async ({ chat, userId, prompt }) => {
+    const memoryMessage = await buildConversationMemoryMessage({ chat, userId })
+    const memoryContext = String(memoryMessage?.content || "")
+        .replace(/^Conversation memory:\n/i, "")
+        .trim()
+
+    const imagePrompt = buildImagePrompt(prompt)
+
+    if (!memoryContext) {
+        return imagePrompt
+    }
+
+    return [
+        imagePrompt,
+        "Relevant conversation memory:",
+        memoryContext,
+    ].join("\n\n")
+}
+
 const replaceEditedUserMessage = ({ chat, editedMessageId, prompt }) => {
     const safeEditedMessageId = String(editedMessageId || "").trim()
 
@@ -179,21 +289,23 @@ const isRateLimitError = (error) => {
     )
 }
 
-const createTextCompletion = async (openai, prompt) => {
+const createTextCompletion = async (openai, promptOrMessages) => {
     const model = "gemini-2.5-flash"
     const maxAttempts = 2
     let lastError = null
+
+    const messages = Array.isArray(promptOrMessages)
+        ? promptOrMessages
+        : [{
+            role: "user",
+            content: String(promptOrMessages || "").trim(),
+        }]
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
             const result = await openai.chat.completions.create({
                 model,
-                messages: [
-                    {
-                        role: "user",
-                        content: prompt.trim(),
-                    },
-                ],
+                messages,
             })
 
             return result
@@ -595,8 +707,30 @@ const textMessageController = asyncHandler(async (req, res) => {
     }
 
     try {
+        const memoryMessage = await buildConversationMemoryMessage({ chat, userId })
+        const completionMessages = [
+            {
+                role: "system",
+                content: [
+                    "You are SamVaad AI, a helpful assistant that should remember the ongoing conversation and nearby past chats.",
+                    "Use the memory below when it is relevant to the user's request.",
+                    "If the latest user message conflicts with memory, trust the latest user message.",
+                    "Do not mention the memory block unless the user explicitly asks about remembered context.",
+                ].join(" "),
+            },
+        ]
+
+        if (memoryMessage) {
+            completionMessages.push(memoryMessage)
+        }
+
+        completionMessages.push({
+            role: "user",
+            content: prompt.trim(),
+        })
+
         // Send prompt to model and get assistant response
-        const { choices } = await createTextCompletion(openai, prompt)
+        const { choices } = await createTextCompletion(openai, completionMessages)
         const aiMessage = choices?.[0]?.message
 
         if (!aiMessage) {
@@ -708,7 +842,7 @@ const imageMessageController = asyncHandler(async (req, res) => {
     }
 
     // Build a structured prompt for better person-specific outputs, then encode for URL
-    const providerPrompt = buildImagePrompt(prompt)
+    const providerPrompt = await buildMemoryAwareImagePrompt({ chat, userId, prompt })
     const encodedPrompt = encodeURIComponent(providerPrompt)
 
     // Build AI image generation URL (ImageKit transformation route)
@@ -823,11 +957,34 @@ const websiteMessageController = asyncHandler(async (req, res) => {
     }
 
     try {
+        const memoryMessage = await buildConversationMemoryMessage({ chat, userId })
         const websiteText = await fetchWebsiteText(websiteUrl)
         const question = buildWebsiteQuestion(prompt, explicitUrl)
         const websitePrompt = buildWebsiteChatPrompt({ websiteUrl, question, websiteText })
 
-        const { choices } = await createTextCompletion(openai, websitePrompt)
+        const websiteMessages = [
+            {
+                role: "system",
+                content: [
+                    "You are helping a user chat with a website.",
+                    "Answer strictly from the provided website content.",
+                    "If information is not present in the content, clearly say that it is not available on the page.",
+                    "Keep response concise, clear, and helpful.",
+                    "The website text may be truncated, so prioritize the most relevant facts.",
+                ].join(" "),
+            },
+        ]
+
+        if (memoryMessage) {
+            websiteMessages.push(memoryMessage)
+        }
+
+        websiteMessages.push({
+            role: "user",
+            content: websitePrompt,
+        })
+
+        const { choices } = await createTextCompletion(openai, websiteMessages)
         const aiMessage = choices?.[0]?.message
 
         if (!aiMessage) {
@@ -988,10 +1145,12 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
         throw new ApiError(422, "Uploaded image source is missing. Please upload the image again.")
     }
 
+    const memoryMessage = await buildConversationMemoryMessage({ chat, userId })
+
     let aiResult
     if (sourceIsImage && sourceUrl) {
         aiResult = await createVisionCompletion(openai, {
-            prompt,
+            prompt: await buildMemoryAwareImagePrompt({ chat, userId, prompt }),
             imageUrl: sourceUrl,
         })
     } else {
@@ -1001,7 +1160,28 @@ const uploadQaMessageController = asyncHandler(async (req, res) => {
             documentText: sourceText,
         })
 
-        aiResult = await createTextCompletion(openai, qaPrompt)
+        const documentMessages = [
+            {
+                role: "system",
+                content: [
+                    "You are helping a user ask questions about an uploaded document.",
+                    "Answer strictly from the provided document text.",
+                    "If data is missing in the document text, clearly say it is not available in the uploaded file.",
+                    "Keep the answer concise, helpful, and structured.",
+                ].join(" "),
+            },
+        ]
+
+        if (memoryMessage) {
+            documentMessages.push(memoryMessage)
+        }
+
+        documentMessages.push({
+            role: "user",
+            content: qaPrompt,
+        })
+
+        aiResult = await createTextCompletion(openai, documentMessages)
     }
 
     const aiMessage = aiResult?.choices?.[0]?.message

@@ -219,6 +219,33 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     )
 })
 
+const updateUserBookingApproval = asyncHandler(async (req, res) => {
+    if (String(req.user?.role || "") !== "admin") {
+        throw new ApiError(403, "Only admin can approve bookings")
+    }
+
+    const userId = String(req.params?.userId || "").trim()
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ApiError(400, "A valid userId is required")
+    }
+
+    const approved = Boolean(req.body?.approved)
+
+    const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: { isBookingApproved: approved } },
+        { new: true }
+    ).select("-password -refreshToken")
+
+    if (!updatedUser) {
+        throw new ApiError(404, "User not found")
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, updatedUser, approved ? "Booking approved successfully" : "Booking approval revoked"))
+})
+
 //api to get published images by pipeline and by user can be implemented here in future
 
 const getPublishedImages = asyncHandler(async (req, res) => {
@@ -325,6 +352,7 @@ export {
     logoutUser,
     refreshAccessToken,
     getCurrentUser,
+    updateUserBookingApproval,
     getPublishedImages,
     deletePublishedImage
 }
