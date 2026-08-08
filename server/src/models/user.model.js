@@ -31,15 +31,6 @@ const userSchema = new mongoose.Schema({
     credits:{
         type:Number,
         default:50
-    },
-    role: {
-        type: String,
-        enum: ["user", "admin"],
-        default: "user"
-    },
-    isBookingApproved: {
-        type: Boolean,
-        default: false
     }
 }, { timestamps: true })
 
@@ -60,8 +51,7 @@ userSchema.methods.generateAccessToken=function(){
         {
             userId: this._id,
             username: this.username,
-            email: this.email,
-            role: this.role
+            email: this.email
         }
         ,process.env.ACCESS_TOKEN_SECRET,
         {expiresIn:process.env.ACCESS_TOKEN_EXPIRY}

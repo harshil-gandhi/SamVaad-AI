@@ -7,8 +7,6 @@ const Credit = () => {
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const { axios, token, user } = useAppContext()
-  const isAdmin = String(user?.role || "").toLowerCase() === "admin"
-  const isBookingApproved = Boolean(user?.isBookingApproved)
 
   const fetchPlans = async () => {
     try {
@@ -26,10 +24,6 @@ const Credit = () => {
   }
 
   const purchasePlan = async (planId) => {
-    if (!isBookingApproved) {
-      throw new Error('Payment option is available only after admin approves your booking')
-    }
-
     const { data } = await axios.post('/api/v1/credits/purchase', { planId }, {
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -56,14 +50,8 @@ const Credit = () => {
   return (
     <div className='max-w-7xl h-screen overflow-y-scroll mx-auto px-4 sm:px-6 lg:px-8 py-12'>
       <h2 className='text-3xl text-center mb-10 xl:mt-30  font-bold  text-gray-800 dark:text-purple-100'>
-        {isAdmin ? 'Edit Packages' : 'Credit Plans'}
+        Credit Plans
       </h2>
-
-      {!isAdmin && !isBookingApproved && (
-        <p className='text-center mb-6 text-sm text-amber-700 dark:text-amber-300'>
-          Payment option will be available after admin approves your booking.
-        </p>
-      )}
 
       <div className='flex flex-wrap lg:flex-nowrap justify-center gap-5 '>
         {plans.map((plan) => (
@@ -79,26 +67,16 @@ const Credit = () => {
                 ))}
               </ul>
             </div>
-            {isAdmin ? (
-              <button
-                type='button'
-                className='mt-6 bg-gray-700 text-white py-2 px-4 rounded font-medium'
-              >
-                Edit Package
-              </button>
-            ) : (
-              <button
-                onClick={() => toast.promise(purchasePlan(plan._id), {
-                  loading: 'Processing purchase...',
-                  success: 'Redirecting to checkout...',
-                  error: 'Failed to purchase plan'
-                })}
-                disabled={!isBookingApproved}
-                className='mt-6 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed text-white active:bg-purple-800 py-2 px-4 rounded cursor-pointer transition-colors font-medium duration-300'
-              >
-                {isBookingApproved ? 'Buy Now' : 'Awaiting Approval'}
-              </button>
-            )}
+            <button
+              onClick={() => toast.promise(purchasePlan(plan._id), {
+                loading: 'Processing purchase...',
+                success: 'Redirecting to checkout...',
+                error: 'Failed to purchase plan'
+              })}
+              className='mt-6 bg-purple-600 hover:bg-purple-700 text-white active:bg-purple-800 py-2 px-4 rounded cursor-pointer transition-colors font-medium duration-300'
+            >
+              Buy Now
+            </button>
 
           </div>
         ))}

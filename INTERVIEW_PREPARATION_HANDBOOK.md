@@ -17,7 +17,7 @@
   - ask questions about uploaded documents/images
   - manage chats
   - publish generated images to a community page
-  - buy credits through **Stripe** after admin approval
+  - buy credits through **Stripe**
 
 ## Problem statement
 - Many AI apps are scattered across multiple tools.
@@ -28,7 +28,7 @@
 - Users who want image generation
 - Users who want website/document Q&A
 - Community users who want to share generated images
-- Admin users who can approve booking access and manage package visibility
+- Users can purchase credit plans directly
 
 ## Main features
 - **Authentication** with register/login/logout/refresh token flow
@@ -95,7 +95,7 @@ flowchart TD
 
 ### Key Points
 - Auth, chats, AI features, community publishing, and credits are all implemented.
-- Payments are gated by admin approval.
+- Payments are available directly from the credit plans page.
 - The project is backed by MongoDB and deployed with Vercel support.
 
 ### Revision Notes
@@ -684,8 +684,7 @@ sequenceDiagram
 | `password` | String | required, min 8, regex letters/numbers/underscore | secure authentication |
 | `refreshToken` | String | default `null` | token rotation / logout control |
 | `credits` | Number | default `50` | controls paid usage |
-| `role` | String | enum `user` / `admin`, default `user` | authorization |
-| `isBookingApproved` | Boolean | default `false` | gate for payment purchasing |
+| `credits` | Number | default `50` | controls paid usage |
 
 ### User methods
 - `isCorrectPassword(password)` — compares plain text to hash
@@ -701,8 +700,6 @@ sequenceDiagram
   "password": "<hashed>",
   "refreshToken": "<jwt>",
   "credits": 50,
-  "role": "user",
-  "isBookingApproved": false,
   "createdAt": "...",
   "updatedAt": "..."
 }
@@ -842,8 +839,7 @@ erDiagram
 
 ### Authorization
 - Protected routes use `verifyJWT`
-- Admin-only route: booking approval update
-- Purchase endpoint checks `req.user.isBookingApproved`
+- Purchase endpoint creates a Stripe checkout session
 
 ### Logout
 - Server removes `refreshToken` from DB
@@ -909,7 +905,7 @@ flowchart LR
 ### Possible follow-up questions
 - How does `refreshAccessToken` work?
 - What is the difference between access and refresh token?
-- Why is `isBookingApproved` checked before payment?
+- Why is the credit purchase route protected?
 
 ---
 
@@ -979,15 +975,6 @@ flowchart LR
 - **Auth:** yes
 - **Response:** success message and cookies cleared
 - **Controller:** `logoutUser`
-- **Model:** `User`
-
-### `PATCH /api/v1/users/:userId/booking-approval`
-- **Purpose:** admin approves/revokes booking
-- **Body:** `{ approved: boolean }`
-- **Auth:** yes + admin
-- **Response:** updated user
-- **Errors:** 403 non-admin, 400 invalid userId, 404 user not found
-- **Controller:** `updateUserBookingApproval`
 - **Model:** `User`
 
 ### `GET /api/v1/users/published-images`
@@ -1339,7 +1326,7 @@ sequenceDiagram
 ### CRUD operations
 - Create: register, create chat, create transaction
 - Read: fetch user, fetch chats, published images, plans
-- Update: rename chat, booking approval, token refresh, credit updates
+- Update: rename chat, token refresh, credit updates
 - Delete: logout token, delete chat, delete community image
 
 ### Summary
@@ -1768,7 +1755,7 @@ From `.env.example` and health checks:
 | 23 | Why use ImageKit? | To store and serve generated/uploaded media. | Media choice | Confusing with Cloudinary |
 | 24 | Why use Stripe? | Secure checkout and webhook-based payment verification. | Payment design | Ignoring webhooks |
 | 25 | Why is `isPaid` stored in transactions? | To prevent double crediting. | Idempotency | Forgetting duplicate protection |
-| 26 | Why do you check booking approval before purchase? | Business rule enforced by admin approval. | Authorization logic | Missing product rationale |
+| 26 | Why do you check before purchase? | To start checkout only for authenticated users. | Authorization logic | Missing product rationale |
 | 27 | How are credits deducted? | After successful AI responses, by mode-specific amount. | Monetization logic | Thinking it happens before success |
 | 28 | What happens on rate limit? | A fallback message is returned and credits are not deducted. | Reliability | Not mentioning fallback |
 | 29 | How do you handle file size limits? | Multer limits uploads to 12 MB. | Upload safety | Not knowing the size limit |
@@ -1820,7 +1807,7 @@ From `.env.example` and health checks:
 | 75 | What happens when a text answer is long? | It is rendered as Markdown and can expand bubble width. | UI rendering | Ignoring layout handling |
 | 76 | Why is response streaming simulated? | To make assistant replies feel progressive in the UI. | UX choice | Claiming server streaming |
 | 77 | Does backend stream responses? | No, frontend simulates streaming from the full text. | Accuracy | Saying backend uses SSE |
-| 78 | What is the admin route used for? | Approving bookings before payment is allowed. | Authorization | Confusing with chat admin |
+| 78 | What is the credit purchase route used for? | Starting Stripe checkout for a selected plan. | Payments | Confusing with chat moderation |
 | 79 | Why is `selectedChat` cleared on logout? | To prevent leaking old session state. | Security/UX | Forgetting cleanup |
 | 80 | What is the role of `auth.middleware`? | Trust gate for protected resources. | Middleware purpose | Only saying “token checker” |
 | 81 | What is a serverless-friendly pattern used here? | Caching DB connection promise outside request handlers. | Production readiness | Not noticing caching |
@@ -1836,7 +1823,7 @@ From `.env.example` and health checks:
 | 91 | What is the purpose of `ApiError`? | Standard failure error with status code and message. | Error design | Not knowing custom errors |
 | 92 | How does rename validation work? | Name is trimmed and limited to 60 chars. | Input validation | Ignoring length limit |
 | 93 | How does the app avoid double payment crediting? | It checks `isPaid` before updating transaction and credits. | Idempotency | Missing duplicate guard |
-| 94 | Why is `isBookingApproved` in user schema? | It gates credit purchases. | Business logic | Ignoring monetization rule |
+| 94 | Why are credits in the user schema? | It tracks available credit balance. | Business logic | Ignoring monetization rule |
 | 95 | What does the footer mean? | A simple disclaimer that AI can make mistakes. | Product UX | Overstating its technical role |
 | 96 | Why use `useEffect` for payment return handling? | It reacts to route changes and verifies the Stripe session. | React lifecycle | Ignoring dependencies |
 | 97 | Why use `useRef` in ChatBox? | For timers, DOM refs, streaming, and speech recognition state. | Ref usage | Thinking refs are only for DOM |
@@ -1990,7 +1977,7 @@ From `.env.example` and health checks:
 - `/api/v1/webhooks/stripe`
 
 ### Database
-- `User` — auth, credits, role, booking approval, refresh token
+- `User` — auth, credits, refresh token
 - `Chat` — user-owned conversation with embedded messages
 - `Transaction` — Stripe purchase record and payment idempotency
 
